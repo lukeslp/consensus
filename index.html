@@ -1778,7 +1778,7 @@ function switchView(view) {
         legendSection.style.display = 'none';
         quickFilters.style.display = 'flex';
         genreFilters.style.display = 'flex';
-        document.querySelectorAll('.const-only').forEach(el => el.style.setProperty('display', '', 'important'));
+        document.querySelectorAll('.const-only').forEach(el => el.style.setProperty('display', 'flex', 'important'));
         constTransform = d3.zoomIdentity;
     }
 
@@ -2434,7 +2434,7 @@ function hideInfoPanel() {
 // ── Mouse Events ──
 canvas.addEventListener('mousemove', (e) => {
     if (isCoarsePointer) return;
-    if (activeView !== 'nebula' && activeView !== 'divide') return;
+    if (activeView !== 'nebula' && activeView !== 'divide' && activeView !== 'constellations') return;
 
     const film = hitTest(e.clientX, e.clientY);
     if (film && film !== hoveredFilm) {
@@ -2453,7 +2453,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('click', (e) => {
-    if (activeView !== 'nebula' && activeView !== 'divide') return;
+    if (activeView !== 'nebula' && activeView !== 'divide' && activeView !== 'constellations') return;
 
     const film = hitTest(e.clientX, e.clientY);
     if (film) {

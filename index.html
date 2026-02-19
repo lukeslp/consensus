@@ -1715,6 +1715,7 @@ function switchView(view) {
         genreFilters.style.display = 'flex';
         updateLegendScale();
         transform = d3.zoomIdentity;
+        document.querySelectorAll('.const-only').forEach(el => el.style.removeProperty('display'));
     } else if (view === 'divide') {
         axisX.textContent = 'RT Critics \u2192';
         axisY.textContent = 'RT Audience \u2192';
@@ -1725,6 +1726,7 @@ function switchView(view) {
         quickFilters.style.display = 'flex';
         genreFilters.style.display = 'none';
         divideTransform = d3.zoomIdentity;
+        document.querySelectorAll('.const-only').forEach(el => el.style.removeProperty('display'));
     } else if (view === 'timeline') {
         axisX.textContent = 'Consensus Score \u2192';
         axisY.style.display = 'none';
@@ -1734,6 +1736,7 @@ function switchView(view) {
         quickFilters.style.display = 'flex';
         genreFilters.style.display = 'none';
         transform = d3.zoomIdentity;
+        document.querySelectorAll('.const-only').forEach(el => el.style.removeProperty('display'));
     } else if (view === 'constellations') {
         axisX.style.display = 'none';
         axisY.style.display = 'none';
@@ -1741,7 +1744,8 @@ function switchView(view) {
         legendSection.style.display = 'none';
         quickFilters.style.display = 'flex';
         genreFilters.style.display = 'flex';
-        transform = d3.zoomIdentity;
+        document.querySelectorAll('.const-only').forEach(el => el.style.setProperty('display', '', 'important'));
+        constTransform = d3.zoomIdentity;
     }
 
     updateStatsBar();
@@ -2195,10 +2199,12 @@ const zoom = d3.zoom()
     .scaleExtent([0.5, 30])
     .on('start', () => { isInteracting = true; })
     .on('zoom', (e) => {
-        if (activeView === 'divide') {
-            divideTransform = e.transform;
-        } else {
+        if (activeView === 'nebula' || activeView === 'timeline') {
             transform = e.transform;
+        } else if (activeView === 'divide') {
+            divideTransform = e.transform;
+        } else if (activeView === 'constellations') {
+            constTransform = e.transform;
         }
         scheduleRender();
     })
@@ -2223,6 +2229,21 @@ function getNebulaProjection() {
 }
 
 function hitTest(mx, my) {
+    if (activeView === 'constellations') {
+        let best = null, bestDist = Infinity;
+        const cap = Math.min(visibleFilms.length, 8000);
+        for (let i = 0; i < cap; i++) {
+            const f = visibleFilms[i];
+            if (f.sx == null) continue;
+            const dx = mx - f.sx, dy = my - f.sy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < Math.max(f.sr + 4, 6) && dist < bestDist) {
+                best = f; bestDist = dist;
+            }
+        }
+        return best;
+    }
+
     let closest = null;
     let closestDist = Infinity;
 
@@ -2501,6 +2522,23 @@ document.querySelectorAll('.view-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         switchView(tab.dataset.view);
     });
+});
+
+// ── Constellations controls ──
+document.getElementById('constX').addEventListener('change', e => {
+    constXAxis = e.target.value;
+    scheduleRender();
+});
+document.getElementById('constY').addEventListener('change', e => {
+    constYAxis = e.target.value;
+    scheduleRender();
+});
+document.getElementById('clustersBtn').addEventListener('click', () => {
+    showGenreClusters = !showGenreClusters;
+    const btn = document.getElementById('clustersBtn');
+    btn.classList.toggle('active', showGenreClusters);
+    btn.setAttribute('aria-pressed', showGenreClusters ? 'true' : 'false');
+    scheduleRender();
 });
 
 // ── Help ──

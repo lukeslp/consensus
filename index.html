@@ -1001,6 +1001,26 @@
             <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" aria-controls="canvas">Timeline</button>
             <button class="view-tab" data-view="constellations" role="tab" aria-selected="false" aria-controls="canvas">Constellations</button>
         </div>
+        <div class="ctrl-sep const-only" id="constAxisSep"></div>
+        <div class="ctrl-const-axes const-only" id="constAxes">
+            <select id="constX" aria-label="X axis platform" class="axis-select">
+                <option value="imdb" selected>IMDb</option>
+                <option value="ml">MovieLens</option>
+                <option value="rt_critic">RT Critics</option>
+                <option value="rt_audience">RT Audience</option>
+                <option value="lb">Letterboxd</option>
+            </select>
+            <span class="axis-vs">vs</span>
+            <select id="constY" aria-label="Y axis platform" class="axis-select">
+                <option value="imdb">IMDb</option>
+                <option value="ml">MovieLens</option>
+                <option value="rt_critic">RT Critics</option>
+                <option value="rt_audience">RT Audience</option>
+                <option value="lb" selected>Letterboxd</option>
+            </select>
+        </div>
+        <div class="ctrl-sep const-only"></div>
+        <button type="button" class="clusters-btn const-only" id="clustersBtn" aria-pressed="false">Clusters</button>
         <div class="ctrl-sep"></div>
         <div class="ctrl-color">
             <div class="color-pills" id="colorPills"></div>
@@ -1039,6 +1059,10 @@ let activeQuickFilter = 'all';
 let isInteracting = false;
 let renderRAF = null;
 let activeView = 'nebula';
+let constXAxis = 'imdb';
+let constYAxis = 'lb';
+let showGenreClusters = false;
+let constTransform = d3.zoomIdentity;
 let timelineCacheKey = null;
 let timelineCacheData = null;
 let lastStatsText = '';

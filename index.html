@@ -1,0 +1,2446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/assets/images/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Consensus: 140K Films Across 4 Platforms</title>
+    <meta name="description" content="Where do critics, cinephiles, and casual viewers agree — and where do they violently disagree? 140,000+ films mapped by their cross-platform rating DNA.">
+    <meta property="og:title" content="Consensus: Cross-Platform Film Ratings">
+    <meta property="og:description" content="140K films mapped by IMDb, MovieLens, Rotten Tomatoes, and Letterboxd scores.">
+    <meta property="og:type" content="website">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
+        }
+
+        input, button { font: inherit; }
+        button { color: inherit; }
+        button:focus-visible,
+        input:focus-visible,
+        a:focus-visible {
+            outline: 2px solid rgba(212, 192, 255, 0.9);
+            outline-offset: 2px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #050505;
+            color: #e0e0e0;
+            overflow: hidden;
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0; left: 0;
+            cursor: grab;
+            touch-action: none;
+        }
+        canvas:active { cursor: grabbing; }
+
+        /* ── MINIMAL HEADER ── */
+        .header {
+            position: absolute;
+            top: var(--safe-top);
+            left: 0;
+            right: 0;
+            z-index: 10;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 calc(20px + var(--safe-right)) 0 calc(20px + var(--safe-left));
+            background: linear-gradient(to bottom, rgba(5,5,5,0.9) 0%, rgba(5,5,5,0.4) 70%, transparent 100%);
+            pointer-events: none;
+        }
+        .header > * { pointer-events: auto; }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .brand {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.85);
+            letter-spacing: -0.02em;
+        }
+        .brand-sep {
+            width: 1px;
+            height: 14px;
+            background: rgba(255,255,255,0.12);
+        }
+        .film-count {
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.3);
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.02em;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ── SEARCH ── */
+        .search-wrap {
+            position: relative;
+        }
+        .search-input {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 6px;
+            padding: 6px 12px 6px 28px;
+            font-size: 0.75rem;
+            color: #e0e0e0;
+            width: 200px;
+            outline: none;
+            font-family: inherit;
+            transition: all 0.25s ease;
+        }
+        .search-input:focus {
+            background: rgba(255,255,255,0.07);
+            border-color: rgba(180, 140, 255, 0.3);
+            width: 280px;
+        }
+        .search-input::placeholder { color: rgba(255,255,255,0.2); }
+        .search-icon {
+            position: absolute;
+            left: 9px; top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.2);
+            font-size: 11px;
+            pointer-events: none;
+        }
+        .search-results {
+            position: absolute;
+            top: 34px; left: 0; right: 0;
+            background: rgba(12, 12, 12, 0.96);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            max-height: 260px;
+            overflow-y: auto;
+            display: none;
+            backdrop-filter: blur(16px);
+            z-index: 50;
+        }
+        .search-results.active { display: block; }
+        .search-result {
+            padding: 7px 12px;
+            cursor: pointer;
+            font-size: 0.72rem;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.15s;
+        }
+        .search-result:hover { background: rgba(180, 140, 255, 0.08); }
+        .search-result:last-child { border-bottom: none; }
+        .search-result .year { color: rgba(255,255,255,0.25); font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; }
+
+        /* ── HELP ── */
+        .help-btn {
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 11px; color: rgba(255,255,255,0.25);
+            transition: all 0.2s;
+        }
+        .help-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); }
+        .help-menu {
+            position: absolute;
+            top: calc(52px + var(--safe-top));
+            right: calc(20px + var(--safe-right));
+            z-index: 40;
+            background: rgba(10, 10, 10, 0.96);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-size: 0.7rem;
+            line-height: 1.9;
+            display: none;
+            backdrop-filter: blur(16px);
+            max-width: 240px;
+            color: rgba(255,255,255,0.4);
+        }
+        .help-menu.active { display: block; }
+        .help-menu strong { color: rgba(255,255,255,0.7); font-weight: 500; }
+        .help-menu kbd {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* ── UNIFIED CONTROL DOCK ── */
+        .dock {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: none;
+            padding-bottom: calc(12px + var(--safe-bottom));
+        }
+        .dock > * { pointer-events: auto; }
+
+        /* Genre row (above main dock) */
+        .preset-row {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 960px;
+            margin-bottom: 6px;
+            padding: 0 20px;
+        }
+        .preset-pill {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 5px 11px;
+            min-height: 30px;
+            font-size: 0.62rem;
+            color: rgba(255,255,255,0.45);
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        .preset-pill:hover {
+            color: rgba(255,255,255,0.7);
+            background: rgba(255,255,255,0.06);
+        }
+        .preset-pill.active {
+            background: rgba(180, 140, 255, 0.14);
+            border-color: rgba(180, 140, 255, 0.28);
+            color: rgba(220, 200, 255, 0.92);
+        }
+
+        .genre-row {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 800px;
+            margin-bottom: 6px;
+            padding: 0 20px;
+        }
+        .genre-pill {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 3px 9px;
+            font-size: 0.58rem;
+            color: rgba(255,255,255,0.32);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            letter-spacing: 0.01em;
+        }
+        .genre-pill:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); }
+        .genre-pill.active {
+            background: rgba(180, 140, 255, 0.1);
+            border-color: rgba(180, 140, 255, 0.2);
+            color: rgba(200, 176, 255, 0.8);
+        }
+
+        /* Main control strip */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            width: max-content;
+            max-width: calc(100vw - 40px - var(--safe-left) - var(--safe-right));
+            background: rgba(8, 8, 8, 0.88);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            backdrop-filter: blur(20px);
+            padding: 0;
+            height: 36px;
+            overflow: hidden;
+        }
+
+        /* View tabs section */
+        .ctrl-views {
+            display: flex;
+            align-items: center;
+            gap: 1px;
+            padding: 0 4px;
+            height: 100%;
+        }
+        .view-tab {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.67rem;
+            color: rgba(255,255,255,0.3);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+            font-weight: 400;
+        }
+        .view-tab:hover { color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.04); }
+        .view-tab.active {
+            background: rgba(180, 140, 255, 0.12);
+            color: rgba(212, 192, 255, 0.9);
+            font-weight: 500;
+        }
+
+        /* Divider between sections */
+        .ctrl-sep {
+            width: 1px;
+            height: 18px;
+            background: rgba(255,255,255,0.06);
+            flex-shrink: 0;
+        }
+
+        /* Color section */
+        .ctrl-color {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 10px;
+            height: 100%;
+        }
+        .ctrl-color-label {
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.18);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        .color-pills {
+            display: flex;
+            gap: 2px;
+        }
+        .color-pill {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.28);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        .color-pill:hover { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.03); }
+        .color-pill.active {
+            background: rgba(255,255,255,0.06);
+            border-color: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.65);
+        }
+
+        /* Legend gradient inline */
+        .ctrl-legend {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 8px;
+            height: 100%;
+        }
+        .legend-label {
+            font-size: 0.5rem;
+            color: rgba(255,255,255,0.2);
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+        .legend-gradient {
+            height: 4px;
+            width: 80px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        /* Stats & actions section */
+        .ctrl-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 10px 0 6px;
+            height: 100%;
+        }
+        .stats-text {
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.18);
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+        .fs-btn {
+            width: 22px; height: 22px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            color: rgba(255,255,255,0.2);
+            font-size: 11px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .fs-btn:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.5); }
+
+        /* ── INFO PANEL ── */
+        .info-panel {
+            position: absolute;
+            top: calc(56px + var(--safe-top));
+            right: calc(16px + var(--safe-right));
+            z-index: 15;
+            width: 280px;
+            display: none;
+            background: rgba(8, 8, 8, 0.92);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            backdrop-filter: blur(20px);
+            padding: 16px;
+            font-size: 0.75rem;
+        }
+        .info-panel.active { display: block; }
+        .info-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 2px;
+            line-height: 1.3;
+            padding-right: 24px;
+        }
+        .info-year {
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.25);
+            margin-bottom: 8px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .info-genre {
+            display: inline-block;
+            background: rgba(180, 140, 255, 0.08);
+            border: 1px solid rgba(180, 140, 255, 0.12);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 0.58rem;
+            color: rgba(180, 140, 255, 0.7);
+            margin-bottom: 12px;
+            letter-spacing: 0.02em;
+        }
+        .rating-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin: 10px 0;
+        }
+        .rating-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .rating-label {
+            width: 72px;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.3);
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .rating-bar-bg {
+            flex: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .rating-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        .rating-value {
+            width: 24px;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.5);
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+        }
+        .info-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        .stat-box { text-align: center; padding: 4px 0; }
+        .stat-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.8);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stat-label {
+            font-size: 0.48rem;
+            color: rgba(255,255,255,0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-top: 1px;
+        }
+        .info-close {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: none; border: none;
+            color: rgba(255,255,255,0.2); cursor: pointer;
+            font-size: 14px;
+            transition: color 0.2s;
+            width: 20px; height: 20px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .info-close:hover { color: rgba(255,255,255,0.6); }
+
+        /* ── TOOLTIP ── */
+        .tooltip {
+            position: absolute;
+            z-index: 25;
+            background: rgba(8, 8, 8, 0.94);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 0.68rem;
+            pointer-events: none;
+            display: none;
+            backdrop-filter: blur(12px);
+            max-width: 200px;
+            white-space: nowrap;
+        }
+        .tooltip.active { display: block; }
+        .tooltip-title { font-weight: 500; color: rgba(255,255,255,0.85); margin-bottom: 1px; }
+        .tooltip-sub { color: rgba(255,255,255,0.25); font-size: 0.58rem; }
+        .tooltip-score {
+            display: flex; gap: 5px; margin-top: 3px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.3);
+        }
+        .tooltip-score span { color: rgba(180, 140, 255, 0.8); }
+
+        /* ── AXIS LABELS ── */
+        .axis-label {
+            position: absolute;
+            z-index: 5;
+            font-size: 0.52rem;
+            color: rgba(255,255,255,0.08);
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            pointer-events: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 400;
+        }
+        .axis-label-x {
+            bottom: calc(70px + var(--safe-bottom));
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .axis-label-y {
+            left: calc(12px + var(--safe-left));
+            top: 50%;
+            transform: translateY(-50%) rotate(-90deg);
+            transform-origin: center;
+        }
+
+        /* ── LOADING ── */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: #050505;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+            transition: opacity 0.8s ease;
+        }
+        .loading-overlay.fade-out { opacity: 0; pointer-events: none; }
+        .loading-title {
+            font-size: 1.1rem;
+            font-weight: 300;
+            color: rgba(255,255,255,0.6);
+            letter-spacing: 0.08em;
+        }
+        .loading-bar {
+            width: 160px;
+            height: 1px;
+            background: rgba(255,255,255,0.06);
+            overflow: hidden;
+        }
+        .loading-bar-fill {
+            width: 0%;
+            height: 100%;
+            background: rgba(180, 140, 255, 0.5);
+            transition: width 0.3s ease;
+        }
+        .loading-stage {
+            font-size: 0.58rem;
+            color: rgba(255,255,255,0.15);
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.05em;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+        /* ── Back link ── */
+        .back-link {
+            position: absolute;
+            bottom: calc(54px + var(--safe-bottom));
+            left: calc(16px + var(--safe-left));
+            z-index: 5;
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.1);
+            text-decoration: none;
+            transition: color 0.2s;
+            pointer-events: auto;
+        }
+        .back-link:hover { color: rgba(255,255,255,0.3); }
+
+        @media (max-width: 1100px) {
+            .header {
+                padding: 0 calc(14px + var(--safe-right)) 0 calc(14px + var(--safe-left));
+            }
+            .search-input { width: 176px; }
+            .search-input:focus { width: 228px; }
+            .help-menu { right: calc(14px + var(--safe-right)); }
+            .genre-row {
+                max-width: 100%;
+                padding: 0 14px;
+            }
+            .preset-row {
+                max-width: 100%;
+                padding: 0 14px;
+            }
+            .info-panel { width: 260px; }
+        }
+
+        @media (max-width: 820px) {
+            .header {
+                top: 0;
+                height: auto;
+                min-height: 52px;
+                align-items: stretch;
+                flex-direction: column;
+                gap: 8px;
+                padding: calc(8px + var(--safe-top)) calc(10px + var(--safe-right)) 8px calc(10px + var(--safe-left));
+                background: linear-gradient(to bottom, rgba(5,5,5,0.96) 0%, rgba(5,5,5,0.78) 72%, rgba(5,5,5,0) 100%);
+            }
+            .header-left {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .header-right {
+                width: 100%;
+                gap: 8px;
+            }
+            .search-wrap {
+                flex: 1;
+                min-width: 0;
+            }
+            .search-input {
+                width: 100%;
+                max-width: none;
+                font-size: 16px;
+                padding: 8px 12px 8px 30px;
+            }
+            .search-input:focus { width: 100%; }
+            .search-results {
+                top: 38px;
+                max-height: min(40vh, 260px);
+            }
+            .help-btn {
+                width: 34px;
+                height: 34px;
+                font-size: 13px;
+                flex-shrink: 0;
+            }
+            .help-menu {
+                top: calc(98px + var(--safe-top));
+                right: calc(10px + var(--safe-right));
+                left: calc(10px + var(--safe-left));
+                max-width: none;
+                padding: 12px 14px;
+                line-height: 1.7;
+                font-size: 0.72rem;
+            }
+
+            .dock {
+                align-items: stretch;
+                padding: 0 calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left));
+            }
+            .preset-row {
+                max-width: none;
+                margin-bottom: 6px;
+                padding: 0;
+                justify-content: flex-start;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+            .preset-row::-webkit-scrollbar { display: none; }
+            .preset-pill {
+                min-height: 32px;
+                padding: 6px 11px;
+                font-size: 0.64rem;
+            }
+            .genre-row {
+                max-width: none;
+                margin-bottom: 6px;
+                padding: 0;
+                justify-content: flex-start;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+            .genre-row::-webkit-scrollbar { display: none; }
+            .genre-pill {
+                flex: 0 0 auto;
+                min-height: 30px;
+                padding: 6px 11px;
+                border-radius: 12px;
+                font-size: 0.66rem;
+            }
+
+            .controls {
+                width: 100%;
+                max-width: none;
+                min-height: 0;
+                height: auto;
+                padding: 6px;
+                border-radius: 12px;
+                overflow: visible;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .ctrl-sep { display: none; }
+
+            .ctrl-views,
+            .ctrl-color,
+            .ctrl-legend,
+            .ctrl-meta {
+                height: auto;
+                padding: 0;
+            }
+
+            .ctrl-views {
+                width: 100%;
+                gap: 4px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+            .ctrl-views::-webkit-scrollbar { display: none; }
+            .view-tab {
+                flex: 0 0 auto;
+                min-height: 32px;
+                padding: 7px 10px;
+                font-size: 0.64rem;
+            }
+
+            .ctrl-color { width: 100%; }
+            .color-pills {
+                width: 100%;
+                gap: 4px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+            .color-pills::-webkit-scrollbar { display: none; }
+            .color-pill {
+                flex: 0 0 auto;
+                min-height: 30px;
+                padding: 5px 10px;
+                font-size: 0.62rem;
+            }
+
+            .ctrl-legend {
+                width: 100%;
+                justify-content: center;
+                gap: 6px;
+            }
+            .legend-gradient { width: min(160px, 44vw); }
+            .legend-label { font-size: 0.56rem; }
+
+            .ctrl-meta {
+                width: 100%;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .stats-text { font-size: 0.6rem; }
+            .fs-btn {
+                width: 32px;
+                height: 32px;
+                font-size: 13px;
+                border-radius: 6px;
+            }
+
+            .info-panel {
+                left: calc(8px + var(--safe-left));
+                right: calc(8px + var(--safe-right));
+                top: auto;
+                bottom: calc(138px + var(--safe-bottom));
+                width: auto;
+                max-height: 52vh;
+                overflow-y: auto;
+                border-radius: 12px;
+                padding: 14px;
+            }
+            .rating-label {
+                width: 64px;
+                font-size: 0.58rem;
+            }
+
+            .axis-label { display: none; }
+            .back-link { display: none; }
+            .tooltip { max-width: 170px; }
+        }
+
+        @media (max-width: 520px) {
+            .header-left { gap: 6px; }
+            .brand {
+                font-size: 0.88rem;
+                letter-spacing: -0.01em;
+            }
+            .brand-sep { display: none; }
+            .film-count { font-size: 0.56rem; }
+
+            .view-tab {
+                padding: 7px 9px;
+                font-size: 0.6rem;
+            }
+            .preset-pill {
+                padding: 6px 10px;
+                font-size: 0.6rem;
+            }
+            .color-pill {
+                padding: 5px 9px;
+                font-size: 0.58rem;
+            }
+            .stats-text {
+                font-size: 0.56rem;
+                max-width: calc(100% - 44px);
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .info-panel {
+                bottom: calc(154px + var(--safe-bottom));
+                max-height: 56vh;
+            }
+            .help-menu { font-size: 0.68rem; }
+        }
+
+        @media (max-height: 520px) and (orientation: landscape) {
+            .header {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+                min-height: 44px;
+                padding-top: calc(6px + var(--safe-top));
+                padding-bottom: 6px;
+            }
+            .header-right {
+                width: auto;
+                flex: 1;
+                justify-content: flex-end;
+            }
+            .search-wrap {
+                width: 220px;
+                max-width: 42vw;
+            }
+            .search-input {
+                font-size: 14px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+            }
+            .preset-row {
+                margin-bottom: 4px;
+            }
+            .preset-pill {
+                min-height: 28px;
+                padding: 4px 9px;
+                font-size: 0.58rem;
+            }
+            .genre-row { display: none; }
+            .dock { padding-bottom: calc(6px + var(--safe-bottom)); }
+            .controls {
+                flex-wrap: nowrap;
+                gap: 0;
+                overflow-x: auto;
+            }
+            .ctrl-sep { display: block; }
+            .ctrl-legend { display: none; }
+            .axis-label { display: none; }
+            .info-panel {
+                top: calc(52px + var(--safe-top));
+                bottom: auto;
+                max-height: calc(100vh - 120px);
+            }
+        }
+
+        @media (hover: none) and (pointer: coarse) {
+            canvas { cursor: default; }
+            .tooltip { display: none !important; }
+            .search-result {
+                padding-top: 10px;
+                padding-bottom: 10px;
+                font-size: 0.78rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+    <div class="loading-title">Consensus</div>
+    <div class="loading-bar"><div class="loading-bar-fill" id="loadingBar"></div></div>
+    <div class="loading-stage" id="loadingStage">Downloading film data...</div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<!-- Minimal header -->
+<div class="header">
+    <div class="header-left">
+        <span class="brand">Consensus</span>
+        <div class="brand-sep"></div>
+        <span class="film-count" id="filmCount"></span>
+    </div>
+    <div class="header-right">
+        <div class="search-wrap">
+            <span class="search-icon">&#x1F50D;</span>
+            <input type="text" class="search-input" id="searchInput" placeholder="Search films..." autocomplete="off" spellcheck="false">
+            <div class="search-results" id="searchResults" role="listbox" aria-label="Film search results"></div>
+        </div>
+        <button type="button" class="help-btn" id="helpBtn" aria-label="Help" aria-expanded="false" aria-controls="helpMenu">?</button>
+    </div>
+</div>
+
+<div class="help-menu" id="helpMenu" role="region" aria-label="Help and keyboard controls">
+    <strong>Controls</strong><br>
+    <kbd>Scroll</kbd> Zoom &nbsp; <kbd>Drag</kbd> Pan<br>
+    <kbd>Click</kbd> Pin info &nbsp; <kbd>/</kbd> Search<br>
+    <kbd>Esc</kbd> Close &nbsp; <kbd>F</kbd> Fullscreen<br>
+    <kbd>1-4</kbd> Color modes<br>
+    <kbd>N</kbd> <kbd>D</kbd> <kbd>T</kbd> <kbd>C</kbd> Switch views<br>
+    <kbd>P</kbd> Toggle perf stats<br>
+    <kbd>&larr;</kbd> <kbd>&rarr;</kbd> Cycle views<br>
+    <br>
+    <strong>Data Sources</strong><br>
+    IMDb &middot; MovieLens 32M &middot; RT &middot; Letterboxd
+</div>
+
+<!-- Info panel -->
+<div class="info-panel" id="infoPanel" role="dialog" aria-modal="false" aria-label="Film details panel">
+    <button class="info-close" id="infoClose" aria-label="Close">&times;</button>
+    <div id="infoPanelBody"></div>
+</div>
+
+<!-- Axis labels -->
+<div class="axis-label axis-label-x" id="axisX">Consensus Score &rarr;</div>
+<div class="axis-label axis-label-y" id="axisY">Polarization &rarr;</div>
+
+<!-- Back to DataVis -->
+<a href="/datavis/" class="back-link">&larr; DataVis</a>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip" aria-hidden="true"></div>
+
+<!-- Unified bottom dock -->
+<div class="dock" id="dock">
+    <div class="preset-row" id="quickFilters" role="group" aria-label="Quick filters"></div>
+    <div class="genre-row" id="genreFilters"></div>
+    <div class="controls" id="controlStrip">
+        <div class="ctrl-views" id="viewTabs" role="tablist" aria-label="Visualization views">
+            <button class="view-tab active" data-view="nebula" role="tab" aria-selected="true" aria-controls="canvas">Nebula</button>
+            <button class="view-tab" data-view="divide" role="tab" aria-selected="false" aria-controls="canvas">The Divide</button>
+            <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" aria-controls="canvas">Timeline</button>
+            <button class="view-tab" data-view="constellations" role="tab" aria-selected="false" aria-controls="canvas">Constellations</button>
+        </div>
+        <div class="ctrl-sep"></div>
+        <div class="ctrl-color">
+            <div class="color-pills" id="colorPills"></div>
+        </div>
+        <div class="ctrl-legend" id="legendScale"></div>
+        <div class="ctrl-sep"></div>
+        <div class="ctrl-meta">
+            <span class="stats-text" id="statsBar" role="status" aria-live="polite"></span>
+            <button class="fs-btn" id="fsBtn" aria-label="Fullscreen">&#x26F6;</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+// ── Cache buster ──
+const _v = 'v=4';
+
+// ── State ──
+let DATA = null;
+let allFilms = [];
+let allFilmsByReviews = [];
+let visibleFilms = [];
+let visibleFilmsByReviews = [];
+let visibleDivideFilms = [];
+let quadtree = null;
+let transform = d3.zoomIdentity;
+let divideTransform = d3.zoomIdentity;
+let hoveredFilm = null;
+let pinnedFilm = null;
+let colorMode = 'consensus';
+let activeGenres = new Set();
+let activeQuickFilter = 'all';
+let isInteracting = false;
+let renderRAF = null;
+let activeView = 'nebula';
+let timelineCacheKey = null;
+let timelineCacheData = null;
+let lastStatsText = '';
+let quickFilterThresholds = {
+    consensus: 80,
+    polarization: 50,
+    split: 20,
+    reviews: 25000
+};
+let showPerfStats = false;
+let perfState = {
+    tier: 'medium',
+    profile: null,
+    adaptiveScale: 1,
+    avgFrameMs: 0,
+    fps: 0,
+    statusText: '0fps medium',
+    sampleCount: 0
+};
+const isCoarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+const QUICK_FILTERS = [
+    { id: 'all', label: 'All Films', short: 'All' },
+    { id: 'consensus', label: 'High Consensus', short: 'Consensus' },
+    { id: 'polarized', label: 'Most Polarizing', short: 'Polarized' },
+    { id: 'split', label: 'Critic vs Crowd', short: 'Split' },
+    { id: 'popular', label: 'Most Reviewed', short: 'Popular' }
+];
+const PERF_PROFILES = {
+    low: {
+        baseDots: 12000,
+        zoomDots: 8000,
+        labelZoomMin: 2.8,
+        glowSkipLow: 8,
+        glowSkipHigh: 5
+    },
+    medium: {
+        baseDots: 26000,
+        zoomDots: 12000,
+        labelZoomMin: 2.3,
+        glowSkipLow: 5,
+        glowSkipHigh: 3
+    },
+    high: {
+        baseDots: 40000,
+        zoomDots: 15000,
+        labelZoomMin: 2.0,
+        glowSkipLow: 4,
+        glowSkipHigh: 2
+    }
+};
+
+// ── DOM ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const loading = document.getElementById('loading');
+const loadingBar = document.getElementById('loadingBar');
+const loadingStage = document.getElementById('loadingStage');
+
+// ── Dimensions ──
+let W, H, dpr;
+function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    configurePerformanceProfile();
+    scheduleRender();
+}
+window.addEventListener('resize', resize);
+resize();
+
+function quantile(sortedValues, q) {
+    if (!sortedValues.length) return 0;
+    const idx = Math.max(0, Math.min(sortedValues.length - 1, Math.floor((sortedValues.length - 1) * q)));
+    return sortedValues[idx];
+}
+
+function detectPerformanceTier() {
+    const cores = navigator.hardwareConcurrency || 4;
+    const memory = navigator.deviceMemory || 4;
+    const pixelLoad = (window.innerWidth || 1) * (window.innerHeight || 1) * (window.devicePixelRatio || 1) ** 2;
+
+    let score = 0;
+    if (cores >= 8) score += 2;
+    else if (cores >= 6) score += 1;
+    else if (cores <= 4) score -= 1;
+
+    if (memory >= 8) score += 2;
+    else if (memory >= 4) score += 1;
+    else if (memory <= 2) score -= 1;
+
+    if (pixelLoad > 4_500_000) score -= 1;
+    if (isCoarsePointer) score -= 1;
+
+    if (score >= 2) return 'high';
+    if (score <= -1) return 'low';
+    return 'medium';
+}
+
+function configurePerformanceProfile() {
+    const tier = detectPerformanceTier();
+    perfState.tier = tier;
+    perfState.profile = PERF_PROFILES[tier];
+    perfState.statusText = `${Math.max(0, Math.round(perfState.fps))}fps ${tier}`;
+}
+
+function recordRenderMetrics(renderMs) {
+    perfState.sampleCount += 1;
+    perfState.avgFrameMs = perfState.avgFrameMs === 0
+        ? renderMs
+        : perfState.avgFrameMs * 0.9 + renderMs * 0.1;
+    perfState.fps = perfState.avgFrameMs > 0 ? 1000 / perfState.avgFrameMs : 0;
+
+    if (perfState.sampleCount % 20 === 0) {
+        if (perfState.avgFrameMs > 24) perfState.adaptiveScale = Math.max(0.55, perfState.adaptiveScale - 0.08);
+        else if (perfState.avgFrameMs < 15) perfState.adaptiveScale = Math.min(1.2, perfState.adaptiveScale + 0.04);
+    }
+
+    if (perfState.sampleCount % 15 === 0) {
+        perfState.statusText = `${Math.round(perfState.fps)}fps ${perfState.tier}`;
+    }
+}
+
+// ── OKLCH Color Palettes ──
+
+// Consensus: cool indigo → warm amber (low → high agreement)
+function oklchConsensus(t) {
+    const stops = [
+        [0.0, 38, 15, 142],
+        [0.25, 89, 52, 246],
+        [0.5, 192, 121, 160],
+        [0.75, 245, 183, 66],
+        [1.0, 253, 231, 37]
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t <= stops[i+1][0]) {
+            const f = (t - stops[i][0]) / (stops[i+1][0] - stops[i][0]);
+            const r = Math.round(stops[i][1] + (stops[i+1][1] - stops[i][1]) * f);
+            const g = Math.round(stops[i][2] + (stops[i+1][2] - stops[i][2]) * f);
+            const b = Math.round(stops[i][3] + (stops[i+1][3] - stops[i][3]) * f);
+            return `rgb(${r},${g},${b})`;
+        }
+    }
+    return 'rgb(253,231,37)';
+}
+
+// Polarization: deep teal → magenta → bright orange
+function oklchPolarization(t) {
+    const stops = [
+        [0.0, 12, 40, 60],
+        [0.25, 20, 80, 100],
+        [0.5, 140, 50, 120],
+        [0.75, 220, 60, 80],
+        [1.0, 255, 180, 50]
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t <= stops[i+1][0]) {
+            const f = (t - stops[i][0]) / (stops[i+1][0] - stops[i][0]);
+            const r = Math.round(stops[i][1] + (stops[i+1][1] - stops[i][1]) * f);
+            const g = Math.round(stops[i][2] + (stops[i+1][2] - stops[i][2]) * f);
+            const b = Math.round(stops[i][3] + (stops[i+1][3] - stops[i][3]) * f);
+            return `rgb(${r},${g},${b})`;
+        }
+    }
+    return 'rgb(255,180,50)';
+}
+
+// Divide view: diverging color for critic-audience gap
+function oklchDivide(gap) {
+    const t = Math.max(0, Math.min(1, (gap + 50) / 100));
+    const stops = [
+        [0.0, 255, 140, 50],
+        [0.3, 200, 100, 80],
+        [0.5, 100, 100, 120],
+        [0.7, 80, 80, 200],
+        [1.0, 100, 60, 255]
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t <= stops[i+1][0]) {
+            const f = (t - stops[i][0]) / (stops[i+1][0] - stops[i][0]);
+            const r = Math.round(stops[i][1] + (stops[i+1][1] - stops[i][1]) * f);
+            const g = Math.round(stops[i][2] + (stops[i+1][2] - stops[i][2]) * f);
+            const b = Math.round(stops[i][3] + (stops[i+1][3] - stops[i][3]) * f);
+            return `rgb(${r},${g},${b})`;
+        }
+    }
+    return 'rgb(100,60,255)';
+}
+
+const COLORS = {
+    consensus: {
+        label: 'Consensus',
+        scale: function(v) {
+            const t = Math.max(0, Math.min(1, (v - 20) / 70));
+            return oklchConsensus(t);
+        },
+        gradient: 'linear-gradient(90deg, rgb(38,15,142), rgb(89,52,246), rgb(192,121,160), rgb(245,183,66), rgb(253,231,37))',
+        low: '20', high: '90'
+    },
+    polarization: {
+        label: 'Polarization',
+        scale: function(v) {
+            const t = Math.max(0, Math.min(1, v / 80));
+            return oklchPolarization(t);
+        },
+        gradient: 'linear-gradient(90deg, rgb(12,40,60), rgb(20,80,100), rgb(140,50,120), rgb(220,60,80), rgb(255,180,50))',
+        low: '0', high: '80'
+    },
+    platforms: {
+        label: 'Platforms',
+        scale: function(v) {
+            const colors = ['#1a1a2e', '#3b1f8e', '#8b5cf6', '#c4a0ff', '#f0e0ff'];
+            return colors[Math.min(v, 4)] || '#1a1a2e';
+        },
+        gradient: 'linear-gradient(90deg, #1a1a2e, #3b1f8e, #8b5cf6, #c4a0ff, #f0e0ff)',
+        low: '1', high: '4+'
+    },
+    genre: {
+        label: 'Genre',
+        scale: null,
+        gradient: null,
+        low: '', high: ''
+    }
+};
+
+const GENRE_COLORS = [
+    '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+    '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabebe',
+    '#469990', '#e6beff', '#9a6324', '#fffac8', '#800000',
+    '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9',
+    '#ff6961', '#77dd77', '#fdfd96', '#84b6f4', '#fdcae1',
+    '#b39eb5', '#c23b22', '#779ecb'
+];
+
+// ── Load Data ──
+async function loadData() {
+    loadingBar.style.width = '5%';
+    loadingStage.textContent = 'Downloading film data...';
+
+    const resp = await fetch('consensus_data.json?' + _v);
+    const totalBytes = parseInt(resp.headers.get('Content-Length') || '0');
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        if (totalBytes > 0) {
+            loadingBar.style.width = Math.round((loaded / totalBytes) * 80) + '%';
+        }
+    }
+
+    loadingBar.style.width = '80%';
+    loadingStage.textContent = 'Parsing films...';
+
+    const allBytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+        allBytes.set(chunk, offset);
+        offset += chunk.length;
+    }
+    const jsonText = new TextDecoder().decode(allBytes);
+
+    DATA = JSON.parse(jsonText);
+    loadingBar.style.width = '90%';
+    loadingStage.textContent = 'Building spatial index...';
+
+    const genres = DATA.genres;
+    allFilms = DATA.films.map((f, i) => ({
+        idx: i,
+        title: f[0],
+        year: f[1],
+        x: f[2],
+        y: f[3],
+        r: f[4],
+        consensus: f[5],
+        polarization: f[6],
+        imdb: f[7],
+        ml: f[8],
+        rt_critic: f[9],
+        rt_audience: f[10],
+        lb: f[11],
+        reviews: f[12],
+        genreIdx: f[13],
+        genre: genres[f[13]] || 'Unknown',
+        platforms: f[14],
+        critic_gap: f[15],
+        sx: 0, sy: 0, sr: 0,
+        dsx: 0, dsy: 0, dsr: 0
+    }));
+    allFilmsByReviews = allFilms.slice().sort((a, b) => b.reviews - a.reviews);
+
+    COLORS.genre.scale = function(film) {
+        return GENRE_COLORS[film.genreIdx % GENRE_COLORS.length];
+    };
+
+    computeQuickFilterThresholds();
+    buildQuickFilters();
+    buildGenreFilters(genres);
+    buildColorPills();
+    filterFilms();
+
+    document.getElementById('filmCount').textContent = allFilms.length.toLocaleString() + ' films';
+
+    loadingBar.style.width = '100%';
+    loadingStage.textContent = 'Ready';
+
+    setTimeout(() => {
+        loading.classList.add('fade-out');
+        setTimeout(() => loading.style.display = 'none', 800);
+    }, 400);
+
+    scheduleRender();
+}
+
+function computeQuickFilterThresholds() {
+    const consensusValues = allFilms
+        .map(f => f.consensus)
+        .filter(v => v != null)
+        .sort((a, b) => a - b);
+    const polarizationValues = allFilms
+        .map(f => f.polarization)
+        .filter(v => v != null)
+        .sort((a, b) => a - b);
+    const splitValues = allFilms
+        .map(f => f.critic_gap == null ? null : Math.abs(f.critic_gap))
+        .filter(v => v != null)
+        .sort((a, b) => a - b);
+    const reviewValues = allFilms
+        .map(f => f.reviews)
+        .filter(v => v != null)
+        .sort((a, b) => a - b);
+
+    quickFilterThresholds = {
+        consensus: quantile(consensusValues, 0.88),
+        polarization: quantile(polarizationValues, 0.88),
+        split: quantile(splitValues, 0.85),
+        reviews: quantile(reviewValues, 0.9)
+    };
+}
+
+function getQuickFilterDefinition(id) {
+    const key = id || activeQuickFilter;
+    return QUICK_FILTERS.find(f => f.id === key) || QUICK_FILTERS[0];
+}
+
+function getQuickFilterPredicate() {
+    if (activeQuickFilter === 'all') return null;
+
+    if (activeQuickFilter === 'consensus') {
+        return f => f.consensus != null && f.consensus >= quickFilterThresholds.consensus;
+    }
+    if (activeQuickFilter === 'polarized') {
+        return f => f.polarization != null && f.polarization >= quickFilterThresholds.polarization;
+    }
+    if (activeQuickFilter === 'split') {
+        return f => f.critic_gap != null && Math.abs(f.critic_gap) >= quickFilterThresholds.split;
+    }
+    if (activeQuickFilter === 'popular') {
+        return f => f.reviews >= quickFilterThresholds.reviews;
+    }
+    return null;
+}
+
+function setQuickFilter(filterId) {
+    activeQuickFilter = filterId;
+    const container = document.getElementById('quickFilters');
+    if (container) {
+        container.querySelectorAll('.preset-pill').forEach(btn => {
+            const isActive = btn.dataset.filter === filterId;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    }
+}
+
+function buildQuickFilters() {
+    const container = document.getElementById('quickFilters');
+    if (!container) return;
+    container.innerHTML = '';
+
+    QUICK_FILTERS.forEach(filter => {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'preset-pill' + (filter.id === activeQuickFilter ? ' active' : '');
+        pill.dataset.filter = filter.id;
+        pill.textContent = filter.label;
+        pill.setAttribute('aria-label', `Quick filter: ${filter.label}`);
+        pill.setAttribute('aria-pressed', filter.id === activeQuickFilter ? 'true' : 'false');
+        pill.addEventListener('click', () => {
+            if (activeQuickFilter === filter.id) return;
+            setQuickFilter(filter.id);
+            filterFilms();
+            scheduleRender();
+        });
+        container.appendChild(pill);
+    });
+}
+
+// ── Genre Filters ──
+function buildGenreFilters(genres) {
+    const container = document.getElementById('genreFilters');
+    const genreCounts = {};
+    allFilms.forEach(f => { genreCounts[f.genre] = (genreCounts[f.genre] || 0) + 1; });
+    const topGenres = Object.entries(genreCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 14)
+        .map(d => d[0]);
+
+    topGenres.forEach(g => {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'genre-pill';
+        pill.textContent = g;
+        pill.setAttribute('aria-label', `Filter by ${g}`);
+        pill.setAttribute('aria-pressed', 'false');
+        pill.addEventListener('click', () => {
+            if (activeGenres.has(g)) {
+                activeGenres.delete(g);
+                pill.classList.remove('active');
+                pill.setAttribute('aria-pressed', 'false');
+            } else {
+                activeGenres.add(g);
+                pill.classList.add('active');
+                pill.setAttribute('aria-pressed', 'true');
+            }
+            filterFilms();
+            scheduleRender();
+        });
+        container.appendChild(pill);
+    });
+}
+
+// ── Color Mode Pills ──
+function buildColorPills() {
+    const container = document.getElementById('colorPills');
+    const modes = ['consensus', 'polarization', 'platforms', 'genre'];
+    modes.forEach((mode) => {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'color-pill' + (mode === colorMode ? ' active' : '');
+        pill.textContent = COLORS[mode].label;
+        pill.setAttribute('aria-label', `Color by ${COLORS[mode].label}`);
+        pill.setAttribute('aria-pressed', mode === colorMode ? 'true' : 'false');
+        pill.addEventListener('click', () => {
+            colorMode = mode;
+            container.querySelectorAll('.color-pill').forEach(p => {
+                p.classList.remove('active');
+                p.setAttribute('aria-pressed', 'false');
+            });
+            pill.classList.add('active');
+            pill.setAttribute('aria-pressed', 'true');
+            updateLegendScale();
+            scheduleRender();
+        });
+        container.appendChild(pill);
+    });
+    updateLegendScale();
+}
+
+function updateLegendScale() {
+    const scale = document.getElementById('legendScale');
+    const c = COLORS[colorMode];
+    if (c.gradient) {
+        scale.innerHTML = `
+            <span class="legend-label">${c.low}</span>
+            <div class="legend-gradient" style="background: ${c.gradient}"></div>
+            <span class="legend-label">${c.high}</span>
+        `;
+        scale.style.display = 'flex';
+    } else {
+        scale.innerHTML = '';
+        scale.style.display = 'none';
+    }
+}
+
+// ── Filter ──
+function filterFilms() {
+    let genreScopedFilms;
+    let genreScopedByReviews;
+    if (activeGenres.size === 0) {
+        genreScopedFilms = allFilms;
+        genreScopedByReviews = allFilmsByReviews;
+    } else {
+        genreScopedFilms = allFilms.filter(f => activeGenres.has(f.genre));
+        genreScopedByReviews = allFilmsByReviews.filter(f => activeGenres.has(f.genre));
+    }
+
+    const quickFilterPredicate = getQuickFilterPredicate();
+    if (quickFilterPredicate) {
+        visibleFilms = genreScopedFilms.filter(quickFilterPredicate);
+        visibleFilmsByReviews = genreScopedByReviews.filter(quickFilterPredicate);
+    } else {
+        visibleFilms = genreScopedFilms;
+        visibleFilmsByReviews = genreScopedByReviews;
+    }
+
+    visibleDivideFilms = visibleFilms.filter(f => f.rt_critic != null && f.rt_audience != null);
+    timelineCacheKey = null;
+    timelineCacheData = null;
+    rebuildQuadtree();
+    updateStatsBar();
+}
+
+function updateStatsBar() {
+    const bar = document.getElementById('statsBar');
+    const k = activeView === 'divide' ? divideTransform.k : transform.k;
+    let text = '';
+    const quickFilter = getQuickFilterDefinition();
+
+    if (activeView === 'nebula') {
+        text = `${visibleFilms.length.toLocaleString()} \u00b7 ${k.toFixed(1)}x`;
+    } else if (activeView === 'divide') {
+        text = `${visibleDivideFilms.length.toLocaleString()} RT \u00b7 ${k.toFixed(1)}x`;
+    } else if (activeView === 'timeline') {
+        text = `${visibleFilms.length.toLocaleString()} \u00b7 decades`;
+    } else if (activeView === 'constellations') {
+        text = `${visibleFilms.length.toLocaleString()} \u00b7 5 axes`;
+    }
+
+    if (quickFilter.id !== 'all') {
+        text = `${quickFilter.short} \u00b7 ${text}`;
+    }
+    if (showPerfStats) {
+        text = `${text} \u00b7 ${perfState.statusText}`;
+    }
+
+    if (text !== lastStatsText) {
+        bar.textContent = text;
+        lastStatsText = text;
+    }
+}
+
+// ── Quadtree ──
+function rebuildQuadtree() {
+    quadtree = d3.quadtree()
+        .x(d => d.x)
+        .y(d => d.y)
+        .addAll(visibleFilms);
+}
+
+// ── Film Color ──
+function filmColor(film, alpha) {
+    const a = alpha !== undefined ? alpha : 1;
+    let rgb;
+    if (colorMode === 'consensus') {
+        rgb = COLORS.consensus.scale(film.consensus || 50);
+    } else if (colorMode === 'polarization') {
+        rgb = COLORS.polarization.scale(film.polarization || 0);
+    } else if (colorMode === 'platforms') {
+        rgb = COLORS.platforms.scale(film.platforms);
+    } else if (colorMode === 'genre') {
+        rgb = GENRE_COLORS[film.genreIdx % GENRE_COLORS.length];
+    } else {
+        return `rgba(180,156,255,${a})`;
+    }
+    if (a >= 1) return rgb;
+    const c = d3.color(rgb);
+    if (c) { c.opacity = a; return c.formatRgb(); }
+    return rgb;
+}
+
+// ── View Switching ──
+function switchView(view) {
+    if (activeView === view) return;
+    activeView = view;
+
+    document.querySelectorAll('.view-tab').forEach(tab => {
+        const isActive = tab.dataset.view === view;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    const axisX = document.getElementById('axisX');
+    const axisY = document.getElementById('axisY');
+    const quickFilters = document.getElementById('quickFilters');
+    const genreFilters = document.getElementById('genreFilters');
+    const colorSection = document.querySelector('.ctrl-color');
+    const legendSection = document.getElementById('legendScale');
+
+    if (view === 'nebula') {
+        axisX.textContent = 'Consensus Score \u2192';
+        axisY.textContent = 'Polarization \u2192';
+        axisX.style.display = 'block';
+        axisY.style.display = 'block';
+        colorSection.style.display = 'flex';
+        quickFilters.style.display = 'flex';
+        genreFilters.style.display = 'flex';
+        updateLegendScale();
+        transform = d3.zoomIdentity;
+    } else if (view === 'divide') {
+        axisX.textContent = 'RT Critics \u2192';
+        axisY.textContent = 'RT Audience \u2192';
+        axisX.style.display = 'block';
+        axisY.style.display = 'block';
+        colorSection.style.display = 'none';
+        legendSection.style.display = 'none';
+        quickFilters.style.display = 'flex';
+        genreFilters.style.display = 'none';
+        divideTransform = d3.zoomIdentity;
+    } else if (view === 'timeline') {
+        axisX.textContent = 'Consensus Score \u2192';
+        axisY.style.display = 'none';
+        axisX.style.display = 'block';
+        colorSection.style.display = 'none';
+        legendSection.style.display = 'none';
+        quickFilters.style.display = 'flex';
+        genreFilters.style.display = 'none';
+        transform = d3.zoomIdentity;
+    } else if (view === 'constellations') {
+        axisX.style.display = 'none';
+        axisY.style.display = 'none';
+        colorSection.style.display = 'none';
+        legendSection.style.display = 'none';
+        quickFilters.style.display = 'flex';
+        genreFilters.style.display = 'flex';
+        transform = d3.zoomIdentity;
+    }
+
+    updateStatsBar();
+    scheduleRender();
+}
+
+// ── Render Dispatch ──
+function scheduleRender() {
+    if (renderRAF) return;
+    renderRAF = requestAnimationFrame(render);
+}
+
+function render() {
+    renderRAF = null;
+    const renderStart = performance.now();
+    if (activeView === 'nebula') renderNebula();
+    else if (activeView === 'divide') renderDivide();
+    else if (activeView === 'timeline') renderTimeline();
+    else if (activeView === 'constellations') renderConstellations();
+    recordRenderMetrics(performance.now() - renderStart);
+}
+
+// ── NEBULA VIEW ──
+function renderNebula() {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, W, H);
+
+    const k = transform.k;
+    const tx = transform.x;
+    const ty = transform.y;
+
+    const scaleX = W / 1000;
+    const scaleY = H / 1000;
+    const baseScale = Math.min(scaleX, scaleY) * 0.85;
+    const offsetX = (W - 1000 * baseScale) / 2;
+    const offsetY = (H - 1000 * baseScale) / 2;
+
+    const invK = 1 / k;
+    const vx0 = (-tx * invK - offsetX) / baseScale;
+    const vy0 = 1000 - ((-ty * invK - offsetY) / baseScale);
+    const vx1 = ((W - tx) * invK - offsetX) / baseScale;
+    const vy1 = 1000 - (((H - ty) * invK - offsetY) / baseScale);
+    const dataLeft = Math.min(vx0, vx1) - 20;
+    const dataRight = Math.max(vx0, vx1) + 20;
+    const dataTop = Math.min(vy0, vy1) - 20;
+    const dataBottom = Math.max(vy0, vy1) + 20;
+
+    const perfProfile = perfState.profile || PERF_PROFILES.medium;
+    const zoomFactor = Math.min(k, 4);
+    const maxDots = Math.min(
+        visibleFilmsByReviews.length,
+        Math.floor((perfProfile.baseDots + zoomFactor * perfProfile.zoomDots) * perfState.adaptiveScale)
+    );
+    const filmsToRender = visibleFilmsByReviews.length > maxDots
+        ? visibleFilmsByReviews.slice(0, maxDots)
+        : visibleFilmsByReviews;
+
+    // Glow layer
+    if (k < 3 && !isInteracting) {
+        ctx.globalAlpha = 0.12;
+        const extraGlowSkip = perfState.avgFrameMs > 22 ? 1 : 0;
+        const glowStep = (k < 1.5 ? perfProfile.glowSkipLow : perfProfile.glowSkipHigh) + extraGlowSkip;
+        for (let i = 0; i < filmsToRender.length; i += glowStep) {
+            const film = filmsToRender[i];
+            if (film.x < dataLeft || film.x > dataRight || film.y < dataTop || film.y > dataBottom) continue;
+            const sx = (offsetX + film.x * baseScale) * k + tx;
+            const sy = (offsetY + (1000 - film.y) * baseScale) * k + ty;
+            const sr = Math.max(film.r * k * 0.5, 1.5);
+            const glowR = sr * 5;
+            const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+            grad.addColorStop(0, filmColor(film, 0.35));
+            grad.addColorStop(0.4, filmColor(film, 0.12));
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.fillRect(sx - glowR, sy - glowR, glowR * 2, glowR * 2);
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // Dots
+    for (let i = 0; i < filmsToRender.length; i++) {
+        const film = filmsToRender[i];
+        if (film.x < dataLeft || film.x > dataRight || film.y < dataTop || film.y > dataBottom) continue;
+
+        const sx = (offsetX + film.x * baseScale) * k + tx;
+        const sy = (offsetY + (1000 - film.y) * baseScale) * k + ty;
+        const sr = Math.max(film.r * k * 0.4, 0.8);
+
+        film.sx = sx;
+        film.sy = sy;
+        film.sr = sr;
+
+        const isHighlighted = film === hoveredFilm || film === pinnedFilm;
+        const alpha = isHighlighted ? 1 : (hoveredFilm || pinnedFilm ? 0.3 : 0.85);
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fillStyle = filmColor(film, alpha);
+        ctx.fill();
+
+        if (isHighlighted) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+    }
+
+    // Labels at high zoom
+    if (k >= perfProfile.labelZoomMin && !isInteracting) {
+        ctx.font = `${Math.min(11, 8 + k)}px Inter, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const maxLabels = Math.floor(20 * k);
+        const labelFilms = [];
+        for (let i = 0; i < visibleFilmsByReviews.length && labelFilms.length < maxLabels; i++) {
+            const film = visibleFilmsByReviews[i];
+            if (film.reviews > 5000) labelFilms.push(film);
+        }
+        if (hoveredFilm && !labelFilms.includes(hoveredFilm)) labelFilms.push(hoveredFilm);
+        if (pinnedFilm && !labelFilms.includes(pinnedFilm)) labelFilms.push(pinnedFilm);
+
+        const placed = [];
+        for (const film of labelFilms) {
+            if (film.x < dataLeft || film.x > dataRight || film.y < dataTop || film.y > dataBottom) continue;
+            const sx = (offsetX + film.x * baseScale) * k + tx;
+            const sy = (offsetY + (1000 - film.y) * baseScale) * k + ty;
+            const sr = Math.max(film.r * k * 0.4, 0.8);
+            const lx = sx + sr + 4;
+            const ly = sy;
+
+            const textW = ctx.measureText(film.title).width;
+            let collision = false;
+            for (const p of placed) {
+                if (Math.abs(ly - p.y) < 12 && Math.abs(lx - p.x) < Math.max(textW, p.w) + 8) {
+                    collision = true;
+                    break;
+                }
+            }
+            if (collision && film !== hoveredFilm && film !== pinnedFilm) continue;
+
+            ctx.fillStyle = film === hoveredFilm || film === pinnedFilm ? '#fff' : 'rgba(255,255,255,0.5)';
+            ctx.fillText(film.title, lx, ly);
+            placed.push({ x: lx, y: ly, w: textW });
+        }
+    }
+
+    ctx.restore();
+    updateStatsBar();
+}
+
+// ── THE DIVIDE VIEW ──
+function renderDivide() {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, W, H);
+
+    const k = divideTransform.k;
+    const tx = divideTransform.x;
+    const ty = divideTransform.y;
+
+    const margin = 80;
+    const plotW = W - margin * 2;
+    const plotH = H - margin * 2;
+
+    function toScreen(critic, audience) {
+        const sx = margin + (critic / 100) * plotW;
+        const sy = margin + (1 - audience / 100) * plotH;
+        return [sx * k + tx, sy * k + ty];
+    }
+
+    // Diagonal line
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    const [x0, y0] = toScreen(0, 0);
+    const [x100, y100] = toScreen(100, 100);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x100, y100);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Quadrant labels
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const [tlx, tly] = toScreen(15, 85);
+    const [trx, tr_y] = toScreen(85, 85);
+    const [blx, bly] = toScreen(15, 15);
+    const [brx, bry] = toScreen(85, 15);
+    ctx.fillText('Critical Darlings', tlx, tly);
+    ctx.fillText('Universal Acclaim', trx, tr_y);
+    ctx.fillText('Nobody\'s Favorite', blx, bly);
+    ctx.fillText('Crowd Pleasers', brx, bry);
+
+    // Dots
+    for (const film of visibleDivideFilms) {
+        const [sx, sy] = toScreen(film.rt_critic, film.rt_audience);
+        const sr = Math.max(Math.sqrt(film.reviews) * 0.02 * k, 0.8);
+
+        film.dsx = sx;
+        film.dsy = sy;
+        film.dsr = sr;
+
+        const isHighlighted = film === hoveredFilm || film === pinnedFilm;
+        const alpha = isHighlighted ? 1 : (hoveredFilm || pinnedFilm ? 0.2 : 0.7);
+        const gap = film.critic_gap ?? (film.rt_critic - film.rt_audience);
+        const color = oklchDivide(gap);
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        const c = d3.color(color);
+        if (c) { c.opacity = alpha; ctx.fillStyle = c.formatRgb(); }
+        else { ctx.fillStyle = color; }
+        ctx.fill();
+
+        if (isHighlighted) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+    }
+
+    ctx.restore();
+    updateStatsBar();
+}
+
+// ── TIMELINE VIEW ──
+function getTimelineDensityData() {
+    if (timelineCacheKey === visibleFilms && timelineCacheData) {
+        return timelineCacheData;
+    }
+
+    const decades = {};
+    for (const film of visibleFilms) {
+        if (film.consensus == null) continue;
+        const decade = Math.floor(film.year / 10) * 10;
+        if (!decades[decade]) decades[decade] = [];
+        decades[decade].push(film.consensus);
+    }
+
+    const decadeList = Object.keys(decades).map(Number).sort((a, b) => a - b);
+    const bins = 50;
+    const densities = {};
+    for (const decade of decadeList) {
+        const hist = new Array(bins).fill(0);
+        for (const score of decades[decade]) {
+            const bin = Math.floor((score / 100) * bins);
+            hist[Math.min(bin, bins - 1)]++;
+        }
+        const maxCount = Math.max(...hist, 1);
+        densities[decade] = hist.map(c => c / maxCount);
+    }
+
+    timelineCacheKey = visibleFilms;
+    timelineCacheData = { decades, decadeList, densities, bins };
+    return timelineCacheData;
+}
+
+function renderTimeline() {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, W, H);
+
+    const { decades, decadeList, densities, bins } = getTimelineDensityData();
+    if (decadeList.length === 0) { ctx.restore(); return; }
+
+    const margin = 60;
+    const plotW = W - margin * 2;
+    const plotH = H - margin * 2;
+    const rowH = plotH / decadeList.length;
+
+    decadeList.forEach((decade, i) => {
+        const y0 = margin + i * rowH;
+        const curve = densities[decade];
+        const maxHeight = rowH * 0.7;
+
+        const midDecade = decade + 5;
+        const t = Math.max(0, Math.min(1, (midDecade - 1920) / (2025 - 1920)));
+        const color = oklchConsensus(t);
+
+        ctx.beginPath();
+        ctx.moveTo(margin, y0 + rowH);
+        for (let j = 0; j < bins; j++) {
+            const x = margin + (j / bins) * plotW;
+            const h = curve[j] * maxHeight;
+            ctx.lineTo(x, y0 + rowH - h);
+        }
+        ctx.lineTo(margin + plotW, y0 + rowH);
+        ctx.closePath();
+
+        const c = d3.color(color);
+        if (c) { c.opacity = 0.5; ctx.fillStyle = c.formatRgb(); }
+        else { ctx.fillStyle = color; }
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+
+        ctx.font = '10px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(decade + 's', margin - 10, y0 + rowH / 2);
+
+        // Film count
+        ctx.font = '8px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.textAlign = 'left';
+        ctx.fillText(decades[decade].length.toLocaleString(), margin + plotW + 8, y0 + rowH / 2);
+    });
+
+    ctx.restore();
+    updateStatsBar();
+}
+
+// ── CONSTELLATIONS VIEW ──
+function renderConstellations() {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, W, H);
+
+    const platforms = ['IMDb', 'MovieLens', 'RT Critics', 'RT Audience', 'Letterboxd'];
+    const margin = 80;
+    const plotW = W - margin * 2;
+    const plotH = H - margin * 2;
+    const axisSpacing = plotW / (platforms.length - 1);
+
+    // Axes
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    platforms.forEach((p, i) => {
+        const x = margin + i * axisSpacing;
+        ctx.beginPath();
+        ctx.moveTo(x, margin);
+        ctx.lineTo(x, margin + plotH);
+        ctx.stroke();
+
+        ctx.font = '9px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(p, x, margin - 8);
+    });
+
+    function getCoords(film) {
+        const scores = [film.imdb, film.ml, film.rt_critic, film.rt_audience, film.lb];
+        const coords = [];
+        scores.forEach((score, i) => {
+            if (score == null) return;
+            const x = margin + i * axisSpacing;
+            const y = margin + plotH - (score / 100) * plotH;
+            coords.push({ x, y, idx: i });
+        });
+        return coords;
+    }
+
+    for (const film of visibleFilms) {
+        const coords = getCoords(film);
+        if (coords.length < 2) continue;
+
+        const alpha = 0.35;
+        const color = GENRE_COLORS[film.genreIdx % GENRE_COLORS.length];
+
+        const c = d3.color(color);
+        if (c) { c.opacity = alpha; ctx.strokeStyle = c.formatRgb(); }
+        else { ctx.strokeStyle = color; }
+        ctx.lineWidth = 0.6;
+
+        ctx.beginPath();
+        ctx.moveTo(coords[0].x, coords[0].y);
+        for (let i = 1; i < coords.length; i++) {
+            ctx.lineTo(coords[i].x, coords[i].y);
+        }
+        ctx.stroke();
+    }
+
+    ctx.restore();
+    updateStatsBar();
+}
+
+// ── Zoom ──
+const zoom = d3.zoom()
+    .scaleExtent([0.5, 30])
+    .on('start', () => { isInteracting = true; })
+    .on('zoom', (e) => {
+        if (activeView === 'divide') {
+            divideTransform = e.transform;
+        } else {
+            transform = e.transform;
+        }
+        scheduleRender();
+    })
+    .on('end', () => {
+        isInteracting = false;
+        scheduleRender();
+    });
+
+d3.select(canvas).call(zoom);
+
+// ── Hit Detection ──
+function getNebulaProjection() {
+    const k = transform.k;
+    const tx = transform.x;
+    const ty = transform.y;
+    const scaleX = W / 1000;
+    const scaleY = H / 1000;
+    const baseScale = Math.min(scaleX, scaleY) * 0.85;
+    const offsetX = (W - 1000 * baseScale) / 2;
+    const offsetY = (H - 1000 * baseScale) / 2;
+    return { k, tx, ty, baseScale, offsetX, offsetY };
+}
+
+function hitTest(mx, my) {
+    let closest = null;
+    let closestDist = Infinity;
+
+    if (activeView === 'divide') {
+        for (let i = 0; i < visibleDivideFilms.length; i++) {
+            const film = visibleDivideFilms[i];
+            const dx = mx - film.dsx;
+            const dy = my - film.dsy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const hitR = Math.max(film.dsr, 10);
+            if (dist < hitR && dist < closestDist) {
+                closest = film;
+                closestDist = dist;
+            }
+        }
+        return closest;
+    }
+
+    if (!quadtree) return null;
+
+    const projection = getNebulaProjection();
+    const invK = 1 / projection.k;
+    const dataX = ((mx - projection.tx) * invK - projection.offsetX) / projection.baseScale;
+    const dataY = 1000 - (((my - projection.ty) * invK - projection.offsetY) / projection.baseScale);
+    const screenSearchRadius = 28;
+    const dataRadius = (screenSearchRadius * invK) / projection.baseScale;
+    const xMin = dataX - dataRadius;
+    const xMax = dataX + dataRadius;
+    const yMin = dataY - dataRadius;
+    const yMax = dataY + dataRadius;
+    const candidates = [];
+
+    quadtree.visit((node, x0, y0, x1, y1) => {
+        if (x1 < xMin || x0 > xMax || y1 < yMin || y0 > yMax) return true;
+        if (!node.length) {
+            let leaf = node;
+            do {
+                if (leaf.data) candidates.push(leaf.data);
+                leaf = leaf.next;
+            } while (leaf);
+        }
+        return false;
+    });
+
+    for (let i = 0; i < candidates.length; i++) {
+        const film = candidates[i];
+        const sx = (projection.offsetX + film.x * projection.baseScale) * projection.k + projection.tx;
+        const sy = (projection.offsetY + (1000 - film.y) * projection.baseScale) * projection.k + projection.ty;
+        const sr = Math.max(film.r * projection.k * 0.4, 0.8);
+        const dx = mx - sx;
+        const dy = my - sy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const hitR = Math.max(sr, 10);
+        if (dist < hitR && dist < closestDist) {
+            closest = film;
+            closestDist = dist;
+        }
+    }
+
+    return closest;
+}
+
+// ── Tooltip ──
+const tooltip = document.getElementById('tooltip');
+function showTooltip(film, mx, my) {
+    const scores = [];
+    if (film.imdb != null) scores.push(`IMDb <span>${film.imdb.toFixed(0)}</span>`);
+    if (film.ml != null) scores.push(`ML <span>${film.ml.toFixed(0)}</span>`);
+    if (film.rt_critic != null) scores.push(`RT <span>${film.rt_critic.toFixed(0)}</span>`);
+    if (film.lb != null) scores.push(`LB <span>${film.lb.toFixed(0)}</span>`);
+
+    tooltip.innerHTML = `
+        <div class="tooltip-title">${film.title}</div>
+        <div class="tooltip-sub">${film.year} \u00b7 ${film.genre}</div>
+        <div class="tooltip-score">${scores.join(' \u00b7 ')}</div>
+    `;
+
+    let tx = mx + 16;
+    let ty = my - 10;
+    if (tx + 200 > W) tx = mx - 210;
+    if (ty + 60 > H) ty = my - 60;
+    if (ty < 0) ty = 10;
+
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+    tooltip.classList.add('active');
+}
+
+function hideTooltip() {
+    tooltip.classList.remove('active');
+}
+
+// ── Info Panel ──
+function showInfoPanel(film) {
+    const panel = document.getElementById('infoPanel');
+    const body = document.getElementById('infoPanelBody');
+
+    const ratings = [
+        { label: 'IMDb', value: film.imdb, color: '#f5c518' },
+        { label: 'MovieLens', value: film.ml, color: '#e74c3c' },
+        { label: 'RT Critics', value: film.rt_critic, color: '#fa320a' },
+        { label: 'RT Audience', value: film.rt_audience, color: '#0ac855' },
+        { label: 'Letterboxd', value: film.lb, color: '#00e054' },
+    ];
+
+    const barsHtml = ratings.map(r => {
+        if (r.value == null) return '';
+        return `<div class="rating-row">
+            <span class="rating-label">${r.label}</span>
+            <div class="rating-bar-bg">
+                <div class="rating-bar-fill" style="width:${r.value}%; background:${r.color}"></div>
+            </div>
+            <span class="rating-value">${r.value.toFixed(0)}</span>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `
+        <div class="info-title">${film.title}</div>
+        <div class="info-year">${film.year}</div>
+        <span class="info-genre">${film.genre}</span>
+        <div class="rating-bars">${barsHtml}</div>
+        <div class="info-stats">
+            <div class="stat-box">
+                <div class="stat-value">${film.consensus != null ? film.consensus.toFixed(0) : '\u2014'}</div>
+                <div class="stat-label">Consensus</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${film.polarization.toFixed(0)}</div>
+                <div class="stat-label">Polarization</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${film.reviews.toLocaleString()}</div>
+                <div class="stat-label">Reviews</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${film.platforms}</div>
+                <div class="stat-label">Platforms</div>
+            </div>
+        </div>
+        ${film.critic_gap != null ? `<div style="margin-top:8px;font-size:0.6rem;color:rgba(255,255,255,0.25)">
+            Critic\u2013Audience Gap: <span style="color:${film.critic_gap > 0 ? '#fa320a' : '#0ac855'};font-weight:500">${film.critic_gap > 0 ? '+' : ''}${film.critic_gap.toFixed(0)}</span>
+        </div>` : ''}
+    `;
+
+    panel.classList.add('active');
+}
+
+function hideInfoPanel() {
+    document.getElementById('infoPanel').classList.remove('active');
+    pinnedFilm = null;
+    scheduleRender();
+}
+
+// ── Mouse Events ──
+canvas.addEventListener('mousemove', (e) => {
+    if (isCoarsePointer) return;
+    if (activeView !== 'nebula' && activeView !== 'divide') return;
+
+    const film = hitTest(e.clientX, e.clientY);
+    if (film && film !== hoveredFilm) {
+        hoveredFilm = film;
+        showTooltip(film, e.clientX, e.clientY);
+        canvas.style.cursor = 'pointer';
+        scheduleRender();
+    } else if (!film && hoveredFilm) {
+        hoveredFilm = null;
+        hideTooltip();
+        canvas.style.cursor = 'grab';
+        scheduleRender();
+    } else if (film) {
+        showTooltip(film, e.clientX, e.clientY);
+    }
+});
+
+canvas.addEventListener('click', (e) => {
+    if (activeView !== 'nebula' && activeView !== 'divide') return;
+
+    const film = hitTest(e.clientX, e.clientY);
+    if (film) {
+        pinnedFilm = film;
+        hoveredFilm = null;
+        hideTooltip();
+        showInfoPanel(film);
+        scheduleRender();
+    } else if (pinnedFilm) {
+        hideInfoPanel();
+    }
+});
+
+// ── Info Close ──
+document.getElementById('infoClose').addEventListener('click', hideInfoPanel);
+
+// ── Search ──
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+let searchDebounce = null;
+
+searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    const q = searchInput.value.trim().toLowerCase();
+    if (q.length < 2) {
+        searchResults.classList.remove('active');
+        return;
+    }
+    searchDebounce = setTimeout(() => {
+        const starts = [];
+        const contains = [];
+        for (const f of allFilms) {
+            const t = f.title.toLowerCase();
+            if (t.startsWith(q)) starts.push(f);
+            else if (t.includes(q)) contains.push(f);
+            if (starts.length + contains.length >= 20) break;
+        }
+        const results = starts.concat(contains).slice(0, 12);
+        if (results.length === 0) {
+            searchResults.classList.remove('active');
+            return;
+        }
+
+        searchResults.innerHTML = results.map(f => `
+            <div class="search-result" data-idx="${f.idx}" role="option" tabindex="0">
+                <span>${f.title}</span>
+                <span class="year">${f.year}</span>
+            </div>
+        `).join('');
+        searchResults.classList.add('active');
+
+        searchResults.querySelectorAll('.search-result').forEach(el => {
+            el.addEventListener('click', () => {
+                const idx = parseInt(el.dataset.idx);
+                const film = allFilms[idx];
+                zoomToFilm(film);
+                searchResults.classList.remove('active');
+                searchInput.value = film.title;
+            });
+            el.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                el.click();
+            });
+        });
+    }, 200);
+});
+
+searchInput.addEventListener('blur', () => {
+    setTimeout(() => searchResults.classList.remove('active'), 200);
+});
+
+function zoomToFilm(film) {
+    if (activeView !== 'nebula') {
+        switchView('nebula');
+    }
+
+    const scaleX = W / 1000;
+    const scaleY = H / 1000;
+    const baseScale = Math.min(scaleX, scaleY) * 0.85;
+    const offsetX = (W - 1000 * baseScale) / 2;
+    const offsetY = (H - 1000 * baseScale) / 2;
+
+    const sx = offsetX + film.x * baseScale;
+    const sy = offsetY + (1000 - film.y) * baseScale;
+
+    const targetK = 5;
+    const targetX = W / 2 - sx * targetK;
+    const targetY = H / 2 - sy * targetK;
+
+    d3.select(canvas).transition().duration(800)
+        .call(zoom.transform, d3.zoomIdentity.translate(targetX, targetY).scale(targetK));
+
+    pinnedFilm = film;
+    showInfoPanel(film);
+}
+
+// ── View Tabs ──
+document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        switchView(tab.dataset.view);
+    });
+});
+
+// ── Help ──
+const helpBtn = document.getElementById('helpBtn');
+const helpMenu = document.getElementById('helpMenu');
+function setHelpMenuOpen(isOpen) {
+    helpMenu.classList.toggle('active', isOpen);
+    helpBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+helpBtn.addEventListener('click', () => setHelpMenuOpen(!helpMenu.classList.contains('active')));
+
+// ── Fullscreen ──
+document.getElementById('fsBtn').addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+    } else {
+        document.exitFullscreen();
+    }
+});
+
+// ── Keyboard ──
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === '/') { e.preventDefault(); searchInput.focus(); }
+    if (e.key === 'Escape') {
+        hideInfoPanel();
+        hideTooltip();
+        setHelpMenuOpen(false);
+        searchResults.classList.remove('active');
+        searchInput.blur();
+    }
+    if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+    }
+    if (e.key === 'p' || e.key === 'P') {
+        showPerfStats = !showPerfStats;
+        lastStatsText = '';
+        updateStatsBar();
+        return;
+    }
+    if (e.key >= '1' && e.key <= '4') {
+        const modes = ['consensus', 'polarization', 'platforms', 'genre'];
+        const idx = parseInt(e.key) - 1;
+        colorMode = modes[idx];
+        document.querySelectorAll('.color-pill').forEach((p, i) => {
+            p.classList.toggle('active', i === idx);
+            p.setAttribute('aria-pressed', i === idx ? 'true' : 'false');
+        });
+        updateLegendScale();
+        scheduleRender();
+    }
+
+    if (e.key === 'n' || e.key === 'N') switchView('nebula');
+    if (e.key === 'd' || e.key === 'D') switchView('divide');
+    if (e.key === 't' || e.key === 'T') switchView('timeline');
+    if (e.key === 'c' || e.key === 'C') switchView('constellations');
+
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const views = ['nebula', 'divide', 'timeline', 'constellations'];
+        const currentIdx = views.indexOf(activeView);
+        const nextIdx = e.key === 'ArrowLeft'
+            ? (currentIdx - 1 + views.length) % views.length
+            : (currentIdx + 1) % views.length;
+        switchView(views[nextIdx]);
+    }
+});
+
+// ── Close panels on click outside ──
+document.addEventListener('click', (e) => {
+    if (!helpMenu.contains(e.target) && e.target !== helpBtn) {
+        setHelpMenuOpen(false);
+    }
+});
+
+// ── Init ──
+loadData();
+
+})();
+</script>
+</body>
+</html>

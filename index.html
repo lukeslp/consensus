@@ -2065,65 +2065,125 @@ function renderTimeline() {
 }
 
 // ── CONSTELLATIONS VIEW ──
+const PLATFORM_LABELS = {
+    imdb: 'IMDb', ml: 'MovieLens',
+    rt_critic: 'RT Critics', rt_audience: 'RT Audience', lb: 'Letterboxd'
+};
+
 function renderConstellations() {
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, W, H);
 
-    const platforms = ['IMDb', 'MovieLens', 'RT Critics', 'RT Audience', 'Letterboxd'];
-    const margin = 80;
+    const k = constTransform.k;
+    const tx = constTransform.x;
+    const ty = constTransform.y;
+
+    const margin = 72;
     const plotW = W - margin * 2;
     const plotH = H - margin * 2;
-    const axisSpacing = plotW / (platforms.length - 1);
 
-    // Axes
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
-    platforms.forEach((p, i) => {
-        const x = margin + i * axisSpacing;
-        ctx.beginPath();
-        ctx.moveTo(x, margin);
-        ctx.lineTo(x, margin + plotH);
-        ctx.stroke();
-
-        ctx.font = '9px "JetBrains Mono", monospace';
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(p, x, margin - 8);
-    });
-
-    function getCoords(film) {
-        const scores = [film.imdb, film.ml, film.rt_critic, film.rt_audience, film.lb];
-        const coords = [];
-        scores.forEach((score, i) => {
-            if (score == null) return;
-            const x = margin + i * axisSpacing;
-            const y = margin + plotH - (score / 100) * plotH;
-            coords.push({ x, y, idx: i });
-        });
-        return coords;
+    function toScreen(xScore, yScore) {
+        const sx = margin + (xScore / 100) * plotW;
+        const sy = margin + (1 - yScore / 100) * plotH;
+        return [sx * k + tx, sy * k + ty];
     }
 
+    // Agreement diagonal
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    const [dx0, dy0] = toScreen(0, 0);
+    const [dx1, dy1] = toScreen(100, 100);
+    ctx.beginPath();
+    ctx.moveTo(dx0, dy0);
+    ctx.lineTo(dx1, dy1);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Quadrant labels
+    const xLabel = PLATFORM_LABELS[constXAxis];
+    const yLabel = PLATFORM_LABELS[constYAxis];
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const [tlx, tly] = toScreen(15, 85);
+    const [trx, try_] = toScreen(85, 85);
+    const [blx, bly] = toScreen(15, 15);
+    const [brx, bry] = toScreen(85, 15);
+    ctx.fillText(`Low ${xLabel} / High ${yLabel}`, tlx, tly);
+    ctx.fillText(`High ${xLabel} / High ${yLabel}`, trx, try_);
+    ctx.fillText(`Low ${xLabel} / Low ${yLabel}`, blx, bly);
+    ctx.fillText(`High ${xLabel} / Low ${yLabel}`, brx, bry);
+
+    // Individual film dots
+    const genreCentroids = {};
+
     for (const film of visibleFilms) {
-        const coords = getCoords(film);
-        if (coords.length < 2) continue;
+        const xScore = film[constXAxis];
+        const yScore = film[constYAxis];
+        if (xScore == null || yScore == null) continue;
 
-        const alpha = 0.35;
+        const [sx, sy] = toScreen(xScore, yScore);
+        const sr = Math.max(Math.sqrt(film.reviews) * 0.018 * k, 0.7);
+
+        film.sx = sx; film.sy = sy; film.sr = sr;
+
+        const isHighlighted = film === hoveredFilm || film === pinnedFilm;
+        const alpha = isHighlighted ? 1 : (hoveredFilm || pinnedFilm ? 0.15 : 0.55);
         const color = GENRE_COLORS[film.genreIdx % GENRE_COLORS.length];
-
         const c = d3.color(color);
-        if (c) { c.opacity = alpha; ctx.strokeStyle = c.formatRgb(); }
-        else { ctx.strokeStyle = color; }
-        ctx.lineWidth = 0.6;
+        if (c) { c.opacity = alpha; ctx.fillStyle = c.formatRgb(); }
+        else { ctx.fillStyle = color; }
 
         ctx.beginPath();
-        ctx.moveTo(coords[0].x, coords[0].y);
-        for (let i = 1; i < coords.length; i++) {
-            ctx.lineTo(coords[i].x, coords[i].y);
+        ctx.arc(sx, sy, Math.max(sr, 0.5), 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isHighlighted) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
         }
-        ctx.stroke();
+
+        if (!genreCentroids[film.genre]) genreCentroids[film.genre] = { sx: 0, sy: 0, n: 0, genreIdx: film.genreIdx };
+        genreCentroids[film.genre].sx += sx;
+        genreCentroids[film.genre].sy += sy;
+        genreCentroids[film.genre].n++;
+    }
+
+    // Genre cluster overlay
+    if (showGenreClusters) {
+        for (const [genre, c] of Object.entries(genreCentroids)) {
+            const cx = c.sx / c.n;
+            const cy = c.sy / c.n;
+            const br = Math.max(Math.sqrt(c.n) * 1.8, 14) * Math.min(k, 1.5);
+            const color = GENRE_COLORS[c.genreIdx % GENRE_COLORS.length];
+            const dc = d3.color(color);
+
+            if (dc) { dc.opacity = 0.12; ctx.fillStyle = dc.formatRgb(); }
+            ctx.beginPath();
+            ctx.arc(cx, cy, br, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (dc) { const dc2 = d3.color(color); dc2.opacity = 0.3; ctx.strokeStyle = dc2.formatRgb(); }
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(cx, cy, br, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.font = `${Math.max(8, Math.min(11, br * 0.55))}px Inter, sans-serif`;
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(genre, cx, cy);
+
+            ctx.font = '7px "JetBrains Mono", monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillText(c.n.toLocaleString(), cx, cy + Math.max(9, br * 0.55));
+        }
     }
 
     ctx.restore();

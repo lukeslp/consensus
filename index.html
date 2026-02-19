@@ -235,33 +235,81 @@
             color: rgba(220, 200, 255, 0.92);
         }
 
-        .genre-row {
-            display: flex;
-            gap: 3px;
-            flex-wrap: wrap;
-            justify-content: center;
-            max-width: 800px;
+        /* Genre dropdown */
+        .genre-dropdown-wrap {
+            position: relative;
             margin-bottom: 6px;
-            padding: 0 20px;
         }
-        .genre-pill {
+        .genre-dropdown-btn {
             background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 10px;
-            padding: 3px 9px;
-            font-size: 0.58rem;
-            color: rgba(255,255,255,0.32);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            padding: 5px 13px;
+            font-size: 0.62rem;
+            color: rgba(255,255,255,0.4);
             cursor: pointer;
-            transition: all 0.2s;
             font-family: inherit;
-            letter-spacing: 0.01em;
+            transition: all 0.2s;
+            white-space: nowrap;
         }
-        .genre-pill:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); }
-        .genre-pill.active {
-            background: rgba(180, 140, 255, 0.1);
-            border-color: rgba(180, 140, 255, 0.2);
-            color: rgba(200, 176, 255, 0.8);
+        .genre-dropdown-btn:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.06); }
+        .genre-dropdown-btn.active {
+            background: rgba(180,140,255,0.12);
+            border-color: rgba(180,140,255,0.28);
+            color: rgba(220,200,255,0.9);
         }
+        .genre-dropdown-panel {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10,10,10,0.96);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 8px;
+            padding: 8px;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 180px;
+            max-height: 260px;
+            overflow-y: auto;
+            backdrop-filter: blur(16px);
+            z-index: 40;
+        }
+        .genre-dropdown-panel.open { display: flex; }
+        .genre-option {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 9px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.68rem;
+            color: rgba(255,255,255,0.45);
+            transition: background 0.12s;
+            user-select: none;
+        }
+        .genre-option:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); }
+        .genre-option.active {
+            background: rgba(180,140,255,0.12);
+            color: rgba(220,200,255,0.9);
+        }
+        .genre-option-count {
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.2);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .genre-clear {
+            margin-top: 4px;
+            padding: 4px 9px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.25);
+            cursor: pointer;
+            text-align: center;
+            border-radius: 0 0 5px 5px;
+        }
+        .genre-clear:hover { color: rgba(255,255,255,0.5); }
 
         /* Main control strip */
         .controls {
@@ -688,10 +736,6 @@
             .search-input { width: 176px; }
             .search-input:focus { width: 228px; }
             .help-menu { right: calc(14px + var(--safe-right)); }
-            .genre-row {
-                max-width: 100%;
-                padding: 0 14px;
-            }
             .preset-row {
                 max-width: 100%;
                 padding: 0 14px;
@@ -770,26 +814,6 @@
                 padding: 6px 11px;
                 font-size: 0.64rem;
             }
-            .genre-row {
-                max-width: none;
-                margin-bottom: 6px;
-                padding: 0;
-                justify-content: flex-start;
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                overscroll-behavior-x: contain;
-                -webkit-overflow-scrolling: touch;
-                scrollbar-width: none;
-            }
-            .genre-row::-webkit-scrollbar { display: none; }
-            .genre-pill {
-                flex: 0 0 auto;
-                min-height: 30px;
-                padding: 6px 11px;
-                border-radius: 12px;
-                font-size: 0.66rem;
-            }
-
             .controls {
                 width: 100%;
                 max-width: none;
@@ -949,7 +973,6 @@
                 padding: 4px 9px;
                 font-size: 0.58rem;
             }
-            .genre-row { display: none; }
             .dock { padding-bottom: calc(6px + var(--safe-bottom)); }
             .controls {
                 flex-wrap: nowrap;
@@ -1048,7 +1071,12 @@
 <!-- Unified bottom dock -->
 <div class="dock" id="dock">
     <div class="preset-row" id="quickFilters" role="group" aria-label="Quick filters"></div>
-    <div class="genre-row" id="genreFilters"></div>
+    <div class="genre-dropdown-wrap" id="genreWrap">
+        <button type="button" class="genre-dropdown-btn" id="genreBtn" aria-haspopup="listbox" aria-expanded="false">
+            Genre: All &#x25BE;
+        </button>
+        <div class="genre-dropdown-panel" id="genrePanel" role="listbox" aria-multiselectable="true" aria-label="Filter by genre"></div>
+    </div>
     <div class="controls" id="controlStrip">
         <div class="ctrl-views" id="viewTabs" role="tablist" aria-label="Visualization views">
             <button class="view-tab active" data-view="nebula" role="tab" aria-selected="true" aria-controls="canvas">Nebula</button>
@@ -1524,9 +1552,10 @@ function buildQuickFilters() {
     });
 }
 
-// ── Genre Filters ──
+// ── Genre Dropdown ──
 function buildGenreFilters(genres) {
-    const container = document.getElementById('genreFilters');
+    const panel = document.getElementById('genrePanel');
+    const btn = document.getElementById('genreBtn');
     const genreCounts = {};
     allFilms.forEach(f => { genreCounts[f.genre] = (genreCounts[f.genre] || 0) + 1; });
     const topGenres = Object.entries(genreCounts)
@@ -1535,27 +1564,60 @@ function buildGenreFilters(genres) {
         .map(d => d[0]);
 
     topGenres.forEach(g => {
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'genre-pill';
-        pill.textContent = g;
-        pill.setAttribute('aria-label', `Filter by ${g}`);
-        pill.setAttribute('aria-pressed', 'false');
-        pill.addEventListener('click', () => {
+        const row = document.createElement('div');
+        row.className = 'genre-option';
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', 'false');
+        row.innerHTML = `<span>${g}</span><span class="genre-option-count">${genreCounts[g].toLocaleString()}</span>`;
+        row.addEventListener('click', () => {
             if (activeGenres.has(g)) {
                 activeGenres.delete(g);
-                pill.classList.remove('active');
-                pill.setAttribute('aria-pressed', 'false');
+                row.classList.remove('active');
+                row.setAttribute('aria-selected', 'false');
             } else {
                 activeGenres.add(g);
-                pill.classList.add('active');
-                pill.setAttribute('aria-pressed', 'true');
+                row.classList.add('active');
+                row.setAttribute('aria-selected', 'true');
             }
+            updateGenreBtn();
             filterFilms();
             scheduleRender();
         });
-        container.appendChild(pill);
+        panel.appendChild(row);
     });
+
+    const clear = document.createElement('div');
+    clear.className = 'genre-clear';
+    clear.textContent = 'Clear all';
+    clear.addEventListener('click', () => {
+        activeGenres.clear();
+        panel.querySelectorAll('.genre-option').forEach(r => {
+            r.classList.remove('active');
+            r.setAttribute('aria-selected', 'false');
+        });
+        updateGenreBtn();
+        filterFilms();
+        scheduleRender();
+    });
+    panel.appendChild(clear);
+
+    btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const open = panel.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+}
+
+function updateGenreBtn() {
+    const btn = document.getElementById('genreBtn');
+    if (activeGenres.size === 0) {
+        btn.textContent = 'Genre: All \u25be';
+        btn.classList.remove('active');
+    } else {
+        const label = activeGenres.size === 1 ? [...activeGenres][0] : `${activeGenres.size} genres`;
+        btn.textContent = `Genre: ${label} \u25be`;
+        btn.classList.add('active');
+    }
 }
 
 // ── Color Mode Pills ──
@@ -1701,7 +1763,7 @@ function switchView(view) {
     const axisX = document.getElementById('axisX');
     const axisY = document.getElementById('axisY');
     const quickFilters = document.getElementById('quickFilters');
-    const genreFilters = document.getElementById('genreFilters');
+    const genreFilters = document.getElementById('genreWrap');
     const colorSection = document.querySelector('.ctrl-color');
     const legendSection = document.getElementById('legendScale');
 
@@ -2611,6 +2673,11 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => {
     if (!helpMenu.contains(e.target) && e.target !== helpBtn) {
         setHelpMenuOpen(false);
+    }
+    const gp = document.getElementById('genrePanel');
+    if (gp && !gp.contains(e.target) && !document.getElementById('genreBtn').contains(e.target)) {
+        gp.classList.remove('open');
+        document.getElementById('genreBtn').setAttribute('aria-expanded', 'false');
     }
 });
 

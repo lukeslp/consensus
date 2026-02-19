@@ -435,28 +435,26 @@
             font-weight: 500;
             flex-shrink: 0;
         }
-        .color-pills {
-            display: flex;
-            gap: 2px;
-        }
-        .color-pill {
-            background: transparent;
-            border: 1px solid transparent;
+        /* Color mode select */
+        .color-select {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
             border-radius: 4px;
-            padding: 3px 8px;
+            color: rgba(255,255,255,0.5);
             font-size: 0.6rem;
-            color: rgba(255,255,255,0.28);
-            cursor: pointer;
-            transition: all 0.2s;
             font-family: inherit;
-            white-space: nowrap;
+            padding: 3px 6px;
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            min-width: 90px;
         }
-        .color-pill:hover { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.03); }
-        .color-pill.active {
-            background: rgba(255,255,255,0.06);
-            border-color: rgba(255,255,255,0.08);
-            color: rgba(255,255,255,0.65);
+        .color-select:focus-visible {
+            outline: 2px solid rgba(212,192,255,0.9);
+            outline-offset: 2px;
         }
+        .color-select option { background: #111; color: rgba(255,255,255,0.7); }
 
         /* Legend gradient inline */
         .ctrl-legend {
@@ -851,20 +849,6 @@
             }
 
             .ctrl-color { width: 100%; }
-            .color-pills {
-                width: 100%;
-                gap: 4px;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                scrollbar-width: none;
-            }
-            .color-pills::-webkit-scrollbar { display: none; }
-            .color-pill {
-                flex: 0 0 auto;
-                min-height: 30px;
-                padding: 5px 10px;
-                font-size: 0.62rem;
-            }
 
             .ctrl-legend {
                 width: 100%;
@@ -924,10 +908,6 @@
             .preset-pill {
                 padding: 6px 10px;
                 font-size: 0.6rem;
-            }
-            .color-pill {
-                padding: 5px 9px;
-                font-size: 0.58rem;
             }
             .stats-text {
                 font-size: 0.56rem;
@@ -1106,7 +1086,7 @@
         <button type="button" class="clusters-btn const-only" id="clustersBtn" aria-pressed="false">Clusters</button>
         <div class="ctrl-sep"></div>
         <div class="ctrl-color">
-            <div class="color-pills" id="colorPills"></div>
+            <select id="colorSelect" class="color-select" aria-label="Color mode"></select>
         </div>
         <div class="ctrl-legend" id="legendScale"></div>
         <div class="ctrl-sep"></div>
@@ -1620,29 +1600,21 @@ function updateGenreBtn() {
     }
 }
 
-// ── Color Mode Pills ──
+// ── Color Mode Select ──
 function buildColorPills() {
-    const container = document.getElementById('colorPills');
+    const sel = document.getElementById('colorSelect');
     const modes = ['consensus', 'polarization', 'platforms', 'genre'];
-    modes.forEach((mode) => {
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'color-pill' + (mode === colorMode ? ' active' : '');
-        pill.textContent = COLORS[mode].label;
-        pill.setAttribute('aria-label', `Color by ${COLORS[mode].label}`);
-        pill.setAttribute('aria-pressed', mode === colorMode ? 'true' : 'false');
-        pill.addEventListener('click', () => {
-            colorMode = mode;
-            container.querySelectorAll('.color-pill').forEach(p => {
-                p.classList.remove('active');
-                p.setAttribute('aria-pressed', 'false');
-            });
-            pill.classList.add('active');
-            pill.setAttribute('aria-pressed', 'true');
-            updateLegendScale();
-            scheduleRender();
-        });
-        container.appendChild(pill);
+    modes.forEach(mode => {
+        const opt = document.createElement('option');
+        opt.value = mode;
+        opt.textContent = COLORS[mode].label;
+        if (mode === colorMode) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => {
+        colorMode = sel.value;
+        updateLegendScale();
+        scheduleRender();
     });
     updateLegendScale();
 }
@@ -2646,10 +2618,8 @@ document.addEventListener('keydown', (e) => {
         const modes = ['consensus', 'polarization', 'platforms', 'genre'];
         const idx = parseInt(e.key) - 1;
         colorMode = modes[idx];
-        document.querySelectorAll('.color-pill').forEach((p, i) => {
-            p.classList.toggle('active', i === idx);
-            p.setAttribute('aria-pressed', i === idx ? 'true' : 'false');
-        });
+        const sel = document.getElementById('colorSelect');
+        if (sel) sel.value = colorMode;
         updateLegendScale();
         scheduleRender();
     }

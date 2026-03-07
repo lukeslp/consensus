@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consensus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root {
+  --bg: #0D1117;
+  --bg-raised: #161B22;
+  --bg-panel: #1C2128;
+  --border: #30363D;
+  --text: #E6EDF3;
+  --text-dim: #8B949E;
+  --gold: #C9A84C;
+  --gold-glow: rgba(201, 168, 76, 0.3);
+  --silver: #8B95A2;
+  --silver-glow: rgba(139, 149, 162, 0.25);
+  --bronze: #B87333;
+  --bronze-glow: rgba(184, 115, 51, 0.2);
+  --agree: #3FB950;
+  --disagree: #F85149;
+  --partial: #D29922;
+  --font-display: 'Cormorant Garamond', serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Header ─────────────────────────────────── */
+
+.header {
+  padding: 2rem 2rem 1rem;
+  text-align: center;
+}
+
+.header h1 {
+  font-family: var(--font-display);
+  font-size: 2.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+  text-shadow: 0 0 40px var(--gold-glow);
+  margin-bottom: 0.3rem;
+}
+
+.header .subtitle {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+/* ── Input ──────────────────────────────────── */
+
+.input-area {
+  max-width: 720px;
+  margin: 1.5rem auto;
+  padding: 0 2rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.input-area textarea {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 0.75rem 1rem;
+  resize: none;
+  min-height: 52px;
+  max-height: 120px;
+  transition: border-color 0.2s;
+}
+
+.input-area textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.input-area textarea::placeholder { color: var(--text-dim); }
+
+.btn-debate {
+  background: linear-gradient(135deg, var(--gold), #A88A3A);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  padding: 0 1.5rem;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+
+.btn-debate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px var(--gold-glow);
+}
+
+.btn-debate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Provider toggles ───────────────────────── */
+
+.provider-toggles {
+  max-width: 720px;
+  margin: 0 auto 1.5rem;
+  padding: 0 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.provider-toggle {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.provider-toggle.active { color: var(--text); }
+.provider-toggle.active[data-rank="king"],
+.provider-toggle.active[data-rank="queen"] {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(201, 168, 76, 0.08);
+}
+.provider-toggle.active[data-rank="lord"] {
+  border-color: var(--silver);
+  color: var(--silver);
+  background: rgba(139, 149, 162, 0.08);
+}
+.provider-toggle.active[data-rank="knight"] {
+  border-color: var(--bronze);
+  color: var(--bronze);
+  background: rgba(184, 115, 51, 0.08);
+}
+
+/* ── Tree visualization ─────────────────────── */
+
+.tree-container {
+  width: 100%;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.tree-container svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.node-group { cursor: pointer; }
+
+.node-circle {
+  stroke-width: 2;
+  transition: fill 0.4s, stroke 0.4s, r 0.3s;
+}
+
+.node-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--text-dim);
+  text-anchor: middle;
+  transition: fill 0.3s;
+}
+
+.node-rank {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-style: italic;
+  fill: var(--text-dim);
+  text-anchor: middle;
+  opacity: 0.6;
+}
+
+.node-vote-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-anchor: middle;
+  fill: var(--bg);
+}
+
+.tree-link {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5;
+  transition: stroke 0.4s, stroke-width 0.3s;
+}
+
+.tree-link.active {
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+
+/* Pulse animation for active nodes */
+@keyframes pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px currentColor); }
+  50% { filter: drop-shadow(0 0 12px currentColor); }
+}
+
+.node-active .node-circle {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* ── Consensus result ───────────────────────── */
+
+.consensus-result {
+  max-width: 720px;
+  margin: 1rem auto 2rem;
+  padding: 0 2rem;
+  display: none;
+}
+
+.consensus-result.visible { display: block; }
+
+.result-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.result-verdict {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.result-confidence {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.result-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-raised);
+  margin-bottom: 1rem;
+  overflow: hidden;
+  display: flex;
+}
+
+.result-bar-segment {
+  height: 100%;
+  transition: width 0.6s ease;
+}
+
+.vote-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.vote-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--border);
+}
+
+.vote-card.agree { border-left-color: var(--agree); }
+.vote-card.disagree { border-left-color: var(--disagree); }
+.vote-card.partial { border-left-color: var(--partial); }
+
+.vote-card-model {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+}
+
+.vote-card-summary {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.vote-card-weight {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
+
+/* ── Response panel (expandable per model) ──── */
+
+.model-responses {
+  max-width: 900px;
+  margin: 0 auto 3rem;
+  padding: 0 2rem;
+}
+
+.model-response {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.model-response-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.model-response-header:hover { background: rgba(255,255,255,0.02); }
+
+.model-response-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.model-response-name { font-size: 12px; flex: 1; }
+.model-response-stance { font-size: 11px; font-weight: 500; }
+
+.model-response-body {
+  display: none;
+  padding: 0 1rem 1rem;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  border-top: 1px solid var(--border);
+}
+
+.model-response.open .model-response-body { display: block; }
+
+.model-response-arrow {
+  font-size: 10px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+.model-response.open .model-response-arrow { transform: rotate(90deg); }
+
+/* ── Footer ─────────────────────────────────── */
+
+.footer {
+  text-align: center;
+  padding: 2rem;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  font-style: italic;
+}
+
+.footer a { color: var(--gold); text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+/* ── Responsive ─────────────────────────────── */
+
+@media (max-width: 640px) {
+  .header h1 { font-size: 2rem; }
+  .input-area { flex-direction: column; }
+  .btn-debate { padding: 0.75rem; }
+  .vote-details { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Consensus</h1>
+  <div class="subtitle">Multi-model research debate</div>
+</div>
+
+<div class="input-area">
+  <textarea id="question" rows="2" placeholder="Ask a question — models will independently research and vote on the answer..." aria-label="Research question"></textarea>
+  <button class="btn-debate" id="btn-debate" onclick="startDebate()">Convene</button>
+</div>
+
+<div class="provider-toggles" id="provider-toggles"></div>
+
+<div class="tree-container" id="tree-container">
+  <svg id="tree-svg"></svg>
+</div>
+
+<div class="consensus-result" id="consensus-result">
+  <div class="result-card">
+    <div class="result-header">
+      <div class="result-verdict" id="result-verdict"></div>
+      <div class="result-confidence" id="result-confidence"></div>
+    </div>
+    <div class="result-bar" id="result-bar"></div>
+    <div class="vote-details" id="vote-details"></div>
+  </div>
+</div>
+
+<div class="model-responses" id="model-responses"></div>
+
+<div class="footer">
+  <a href="https://lukesteuber.com">Luke Steuber</a> · <a href="https://bsky.app/profile/lukesteuber.com">@lukesteuber.com</a>
+</div>
+
+<script>
+const API_BASE = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? '' : '/consensus';
+
+let providers = {};
+let selectedProviders = new Set();
+let treeData = null;
+let treeSvg, treeG, treeLayout;
+let modelResponses = {};
+
+// ── Init ──────────────────────────────────────
+
+async function init() {
+  const res = await fetch(`${API_BASE}/api/providers`);
+  treeData = await res.json();
+
+  // Build provider toggles
+  const toggles = document.getElementById('provider-toggles');
+  treeData.children.forEach(p => {
+    selectedProviders.add(p.id);
+    const btn = document.createElement('button');
+    btn.className = 'provider-toggle active';
+    btn.dataset.rank = p.rank;
+    btn.textContent = p.name;
+    btn.onclick = () => {
+      if (selectedProviders.has(p.id)) {
+        selectedProviders.delete(p.id);
+        btn.classList.remove('active');
+      } else {
+        selectedProviders.add(p.id);
+        btn.classList.add('active');
+      }
+    };
+    toggles.appendChild(btn);
+  });
+
+  providers = {};
+  treeData.children.forEach(p => { providers[p.id] = p; });
+
+  renderTree(treeData);
+}
+
+// ── D3 Tree ───────────────────────────────────
+
+function renderTree(data) {
+  const container = document.getElementById('tree-container');
+  const width = Math.max(container.clientWidth, 800);
+  const nodeCount = data.children.reduce((n, p) => n + p.children.length, 0) + data.children.length + 1;
+  const height = Math.max(360, nodeCount * 22 + 100);
+
+  const svg = d3.select('#tree-svg')
+    .attr('width', width)
+    .attr('height', height);
+
+  svg.selectAll('*').remove();
+
+  // Build hierarchy
+  const root = d3.hierarchy(data);
+  const tree = d3.tree().size([width - 160, height - 120]);
+  tree(root);
+
+  treeG = svg.append('g').attr('transform', 'translate(80, 50)');
+
+  // Links
+  treeG.selectAll('.tree-link')
+    .data(root.links())
+    .join('path')
+    .attr('class', 'tree-link')
+    .attr('id', d => `link-${d.target.data.id}`)
+    .attr('d', d3.linkVertical()
+      .x(d => d.x)
+      .y(d => d.y));
+
+  // Nodes
+  const nodes = treeG.selectAll('.node-group')
+    .data(root.descendants())
+    .join('g')
+    .attr('class', 'node-group')
+    .attr('id', d => `node-${d.data.id}`)
+    .attr('transform', d => `translate(${d.x},${d.y})`);
+
+  // Node circles
+  nodes.append('circle')
+    .attr('class', 'node-circle')
+    .attr('r', d => d.depth === 0 ? 16 : d.depth === 1 ? 12 : 8)
+    .attr('fill', d => {
+      if (d.depth === 0) return 'var(--bg-panel)';
+      const color = d.data.color || d.parent?.data.color || 'var(--border)';
+      return d.depth === 1 ? color : 'var(--bg-raised)';
+    })
+    .attr('stroke', d => {
+      if (d.depth === 0) return 'var(--gold)';
+      return d.data.color || d.parent?.data.color || 'var(--border)';
+    });
+
+  // Labels
+  nodes.append('text')
+    .attr('class', 'node-label')
+    .attr('dy', d => d.depth === 0 ? -24 : d.children ? -20 : 24)
+    .text(d => d.data.name);
+
+  // Rank labels for providers
+  nodes.filter(d => d.depth === 1)
+    .append('text')
+    .attr('class', 'node-rank')
+    .attr('dy', -32)
+    .text(d => {
+      const ranks = { king: '♚', queen: '♛', lord: '♜', knight: '♞' };
+      return ranks[d.data.rank] || '';
+    });
+
+  // Click to expand model response
+  nodes.filter(d => d.depth === 2)
+    .on('click', (event, d) => {
+      const el = document.querySelector(`.model-response[data-model="${d.data.id}"]`);
+      if (el) el.classList.toggle('open');
+    });
+}
+
+function updateNodeStatus(modelId, status, vote) {
+  const node = d3.select(`#node-${CSS.escape(modelId)}`);
+  if (node.empty()) return;
+
+  const circle = node.select('.node-circle');
+
+  if (status === 'active') {
+    node.classed('node-active', true);
+    circle.attr('fill', d => d.data.color || d.parent?.data.color || 'var(--gold)');
+  }
+
+  if (status === 'done') {
+    node.classed('node-active', false);
+    const colors = { AGREE: 'var(--agree)', DISAGREE: 'var(--disagree)', PARTIAL: 'var(--partial)' };
+    const voteColor = colors[vote] || 'var(--text-dim)';
+    circle.attr('fill', voteColor).attr('stroke', voteColor);
+
+    // Add vote badge
+    const parent = node.node();
+    const g = d3.select(parent);
+    g.selectAll('.node-vote-badge').remove();
+    const symbols = { AGREE: '✓', DISAGREE: '✗', PARTIAL: '~' };
+    g.append('text')
+      .attr('class', 'node-vote-badge')
+      .attr('dy', 4)
+      .text(symbols[vote] || '?');
+  }
+
+  // Pulse the link
+  const link = d3.select(`#link-${CSS.escape(modelId)}`);
+  if (!link.empty()) {
+    const color = status === 'done'
+      ? (vote === 'AGREE' ? 'var(--agree)' : vote === 'DISAGREE' ? 'var(--disagree)' : 'var(--partial)')
+      : 'var(--gold)';
+    link.classed('active', true).attr('stroke', color);
+  }
+}
+
+function updateProviderStatus(providerId, stance) {
+  const node = d3.select(`#node-${CSS.escape(providerId)}`);
+  if (node.empty()) return;
+
+  node.classed('node-active', false);
+  const colors = { AGREE: 'var(--agree)', DISAGREE: 'var(--disagree)', PARTIAL: 'var(--partial)' };
+  const c = colors[stance] || 'var(--text-dim)';
+  node.select('.node-circle').attr('fill', c).attr('stroke', c);
+
+  const link = d3.select(`#link-${CSS.escape(providerId)}`);
+  if (!link.empty()) link.classed('active', true).attr('stroke', c);
+}
+
+// ── Debate ────────────────────────────────────
+
+async function startDebate() {
+  const question = document.getElementById('question').value.trim();
+  if (!question) return;
+
+  const btn = document.getElementById('btn-debate');
+  btn.disabled = true;
+  btn.textContent = 'Debating...';
+
+  // Reset state
+  modelResponses = {};
+  document.getElementById('consensus-result').classList.remove('visible');
+  document.getElementById('model-responses').innerHTML = '';
+
+  // Update root label
+  const rootLabel = d3.select('#node-root .node-label');
+  if (!rootLabel.empty()) {
+    rootLabel.text(question.length > 50 ? question.slice(0, 47) + '...' : question);
+  }
+
+  // Filter tree to selected providers
+  const filteredTree = {
+    ...treeData,
+    children: treeData.children.filter(p => selectedProviders.has(p.id)),
+  };
+  renderTree(filteredTree);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/debate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        providers: [...selectedProviders],
+      }),
+    });
+    const { session_id } = await res.json();
+
+    // Stream events
+    const evtSource = new EventSource(`${API_BASE}/api/stream/${session_id}`);
+    evtSource.onmessage = (e) => {
+      const evt = JSON.parse(e.data);
+      handleEvent(evt);
+      if (evt.type === 'done') {
+        evtSource.close();
+        btn.disabled = false;
+        btn.textContent = 'Convene';
+      }
+    };
+    evtSource.onerror = () => {
+      evtSource.close();
+      btn.disabled = false;
+      btn.textContent = 'Convene';
+    };
+  } catch (err) {
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = 'Convene';
+  }
+}
+
+function handleEvent(evt) {
+  switch (evt.type) {
+    case 'model_start': {
+      const id = evt.data.model;
+      updateNodeStatus(id, 'active');
+      modelResponses[id] = '';
+      addResponsePanel(id);
+      break;
+    }
+    case 'model_chunk': {
+      const id = evt.data.model;
+      modelResponses[id] = (modelResponses[id] || '') + evt.data.text;
+      updateResponsePanel(id, modelResponses[id]);
+      break;
+    }
+    case 'model_done': {
+      const id = evt.data.model;
+      const stance = evt.data.vote?.stance || 'UNCLEAR';
+      updateNodeStatus(id, 'done', stance);
+      modelResponses[id] = evt.data.response;
+      updateResponsePanel(id, evt.data.response, stance);
+      break;
+    }
+    case 'model_error': {
+      const id = evt.data.model;
+      updateNodeStatus(id, 'done', 'ERROR');
+      break;
+    }
+    case 'provider_done': {
+      updateProviderStatus(evt.data.provider, evt.data.stance);
+      break;
+    }
+    case 'debate_end': {
+      showConsensus(evt.data);
+      break;
+    }
+  }
+}
+
+// ── Response panels ───────────────────────────
+
+function addResponsePanel(modelId) {
+  const container = document.getElementById('model-responses');
+  if (document.querySelector(`.model-response[data-model="${modelId}"]`)) return;
+
+  const parts = modelId.split('/');
+  const providerKey = parts[0];
+  const provider = providers[providerKey];
+  const modelName = provider?.children?.find(m => m.id === modelId)?.name || parts[1];
+  const color = provider?.color || 'var(--text-dim)';
+
+  const div = document.createElement('div');
+  div.className = 'model-response';
+  div.dataset.model = modelId;
+  div.innerHTML = `
+    <div class="model-response-header" onclick="this.parentElement.classList.toggle('open')">
+      <div class="model-response-dot" style="background:${color}"></div>
+      <div class="model-response-name">${provider?.name || providerKey} · ${modelName}</div>
+      <div class="model-response-stance" data-stance></div>
+      <div class="model-response-arrow">▶</div>
+    </div>
+    <div class="model-response-body"></div>
+  `;
+  container.appendChild(div);
+}
+
+function updateResponsePanel(modelId, text, stance) {
+  const el = document.querySelector(`.model-response[data-model="${modelId}"]`);
+  if (!el) return;
+  el.querySelector('.model-response-body').textContent = text;
+  if (stance) {
+    const stanceEl = el.querySelector('[data-stance]');
+    const colors = { AGREE: 'var(--agree)', DISAGREE: 'var(--disagree)', PARTIAL: 'var(--partial)' };
+    stanceEl.textContent = stance;
+    stanceEl.style.color = colors[stance] || 'var(--text-dim)';
+  }
+}
+
+// ── Consensus result ──────────────────────────
+
+function showConsensus(data) {
+  const panel = document.getElementById('consensus-result');
+  panel.classList.add('visible');
+
+  const verdictEl = document.getElementById('result-verdict');
+  const labels = { AGREE: 'Consensus: Agree', DISAGREE: 'Consensus: Disagree', PARTIAL: 'Split Decision', NO_QUORUM: 'No Quorum' };
+  const colors = { AGREE: 'var(--agree)', DISAGREE: 'var(--disagree)', PARTIAL: 'var(--partial)', NO_QUORUM: 'var(--text-dim)' };
+  verdictEl.textContent = labels[data.consensus] || data.consensus;
+  verdictEl.style.color = colors[data.consensus] || 'var(--text)';
+
+  document.getElementById('result-confidence').textContent = `${data.confidence}% weighted confidence`;
+
+  // Bar
+  const bar = document.getElementById('result-bar');
+  const total = data.totals.AGREE + data.totals.DISAGREE + data.totals.PARTIAL || 1;
+  bar.innerHTML = `
+    <div class="result-bar-segment" style="width:${data.totals.AGREE/total*100}%;background:var(--agree)"></div>
+    <div class="result-bar-segment" style="width:${data.totals.PARTIAL/total*100}%;background:var(--partial)"></div>
+    <div class="result-bar-segment" style="width:${data.totals.DISAGREE/total*100}%;background:var(--disagree)"></div>
+  `;
+
+  // Vote cards
+  const details = document.getElementById('vote-details');
+  details.innerHTML = '';
+  data.details.forEach(d => {
+    const parts = d.model.split('/');
+    const card = document.createElement('div');
+    card.className = `vote-card ${d.stance.toLowerCase()}`;
+    card.innerHTML = `
+      <div class="vote-card-model">${parts[0]} · ${parts[1]}</div>
+      <div class="vote-card-summary">${d.summary}</div>
+      <div class="vote-card-weight">weight: ${d.weight}×</div>
+    `;
+    details.appendChild(card);
+  });
+
+  // Update root node
+  const rootNode = d3.select('#node-root .node-circle');
+  rootNode.attr('fill', colors[data.consensus]).attr('stroke', colors[data.consensus]);
+}
+
+// ── Keyboard shortcut ─────────────────────────
+
+document.getElementById('question').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    startDebate();
+  }
+});
+
+// ── Boot ──────────────────────────────────────
+
+init();
+</script>
+</body>
+</html>

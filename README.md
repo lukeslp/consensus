@@ -37,17 +37,29 @@ git clone https://github.com/lukeslp/consensus.git
 cd consensus
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+```
 
-# API keys — needs at least a few providers configured
-# Keys load from ~/documentation/API_KEYS.md or environment
+Set at least one API key — you don't need all of them, just the providers you want to include:
+
+```bash
 export ANTHROPIC_API_KEY=...
 export GEMINI_API_KEY=...
+export OPENAI_API_KEY=...
+export XAI_API_KEY=...
+export MISTRAL_API_KEY=...
+export COHERE_API_KEY=...
+export GROQ_API_KEY=...
+export PERPLEXITY_API_KEY=...
+```
 
+```bash
 python app.py
 # http://localhost:5063
 ```
 
 Press `Cmd+Enter` (or `Ctrl+Enter`) to start a debate.
+
+> **Note:** This project uses a shared LLM provider library (`llm_providers`) for unified auth, rate limiting, and streaming across providers. That library is bundled as part of the broader geepers ecosystem and is not yet published as a standalone package. If you're running into import errors, the library needs to be on your Python path — raise an issue and we can work out the best way to package it.
 
 ## Architecture
 
@@ -58,8 +70,6 @@ Browser → Flask (port 5063) → LLM providers (parallel threads)
 ```
 
 One Flask file, one HTML file. The backend fires all providers in parallel threads, streams events over SSE as each model responds. The frontend renders a D3.js tree that updates in real time.
-
-Uses the shared LLM provider library (`~/shared/llm_providers`) which handles auth, rate limiting, and streaming for 12+ providers through a unified interface.
 
 ## How voting works
 

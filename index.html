@@ -309,7 +309,7 @@ const TIER_STYLE = {
   model:  { color: '#484F58', glow: 'rgba(100,110,120,0.14)', strokeW: 1,   r: 7  },
 };
 
-const VOTE_COLOR = { agree: '#3FB950', disagree: '#F85149', partial: '#E3B341', pending: '#484F58', active: '#C9A84C' };
+const VOTE_COLOR = { agree: '#3FB950', disagree: '#F85149', partial: '#E3B341', error: '#6E7681', pending: '#484F58', active: '#C9A84C' };
 const TIER_GLYPH = { root: '?', queen: '♛', king: '♚', lord: '♜', knight: '♞', model: '·' };
 const NODE_H_GAP = 180;
 const NODE_V_GAP = 52;
@@ -447,12 +447,21 @@ function drawLinks(root) {
     .attr('class', d => `link-fore ${isActive(d.target.data) ? 'link-active-anim' : ''}`);
 
   links.select('.link-particle')
-    .attr('fill', d => isStreaming(d.target.data) ? '#C9A84C' : 'transparent')
-    .attr('opacity', d => isStreaming(d.target.data) ? 0.9 : 0)
     .each(function(d) {
-      if (!isStreaming(d.target.data)) return;
-      const pathEl = this.parentNode.querySelector('.link-fore');
-      if (pathEl) animateParticle(d3.select(this), pathEl);
+      const streaming = isStreaming(d.target.data);
+      const sel = d3.select(this);
+      sel.attr('fill', streaming ? '#C9A84C' : 'transparent')
+         .attr('opacity', streaming ? 0.9 : 0);
+      // Only kick off an animation if one isn't already running for this node.
+      // The rAF loop self-cancels as soon as status is no longer 'streaming'.
+      if (streaming && !this.__animating) {
+        const pathEl = this.parentNode.querySelector('.link-fore');
+        if (pathEl) {
+          this.__animating = true;
+          const self = this;
+          animateParticle(sel, pathEl, () => isStreaming(d.target.data), () => { self.__animating = false; });
+        }
+      }
     });
 }
 
@@ -549,10 +558,11 @@ function statusDotColor(d) {
   return 'transparent';
 }
 
-function animateParticle(dot, pathEl) {
+function animateParticle(dot, pathEl, isActive, onEnd) {
   const len = pathEl.getTotalLength();
   let t = 0;
   function step() {
+    if (!isActive()) { dot.attr('opacity', 0); if (onEnd) onEnd(); return; }
     t = (t + 0.012) % 1;
     const pt = pathEl.getPointAtLength(t * len);
     dot.attr('cx', pt.x).attr('cy', pt.y);
@@ -630,6 +640,29 @@ async function startDebate() {
   }
 }
 
+// Normalize a stance string from the server to one of our vote keys.
+function normalizeStance(s) {
+  const v = (s || '').toString().toLowerCase();
+  if (v === 'agree' || v === 'disagree' || v === 'partial') return v;
+  if (v === 'error') return 'error';
+  return 'partial';
+}
+
+// rAF-batched stream text update. Redraws are expensive; chunk events
+// can fire many times per second across 10+ concurrent model streams, so
+// coalesce them into one DOM write per frame.
+let _streamUpdateQueued = false;
+function queueStreamUpdate() {
+  if (_streamUpdateQueued || !_layoutCache) return;
+  _streamUpdateQueued = true;
+  requestAnimationFrame(() => {
+    _streamUpdateQueued = false;
+    gNodes.selectAll('g.node').select('.node-stream')
+      .text(d => d.data.streamText ? `"${d.data.streamText.slice(-60)}…"` : '')
+      .attr('opacity', d => d.data.streamText ? 1 : 0);
+  });
+}
+
 function handleEvent(evt) {
   switch (evt.type) {
     case 'model_start': {
@@ -647,25 +680,33 @@ function handleEvent(evt) {
         node.status = 'streaming';
         node.streamText = ((node.streamText || '') + evt.data.text).slice(-90);
         modelResponses[evt.data.model] = (modelResponses[evt.data.model] || '') + evt.data.text;
-        // Only update stream labels (cheap)
-        if (_layoutCache) {
-          gNodes.selectAll('g.node').select('.node-stream')
-            .text(d => d.data.streamText ? `"${d.data.streamText.slice(-60)}…"` : '')
-            .attr('opacity', d => d.data.streamText ? 1 : 0);
-        }
+        queueStreamUpdate();
       }
       break;
     }
     case 'model_done': {
       const node = findNode(evt.data.model);
       if (node) {
-        const stance = (evt.data.vote?.stance || 'UNCLEAR').toLowerCase();
         node.status = 'voted';
-        node.vote = stance === 'agree' || stance === 'disagree' || stance === 'partial' ? stance : 'partial';
-        node.confidence = 0.7 + Math.random() * 0.3;
+        node.vote = normalizeStance(evt.data.vote?.stance);
+        // Use server-parsed confidence when available; fall back to a sane default.
+        const conf = evt.data.vote?.confidence;
+        node.confidence = typeof conf === 'number' ? Math.max(0, Math.min(1, conf)) : 0.7;
         node.streamText = '';
         modelResponses[evt.data.model] = evt.data.response;
-        // Roll up provider vote
+        rollUpProviderVote(node);
+        redraw();
+      }
+      break;
+    }
+    case 'model_error': {
+      const node = findNode(evt.data.model);
+      if (node) {
+        node.status = 'voted';
+        node.vote = 'error';
+        node.confidence = 0;
+        node.streamText = '';
+        modelResponses[evt.data.model] = `ERROR: ${evt.data.error || 'unknown'}`;
         rollUpProviderVote(node);
         redraw();
       }
@@ -674,10 +715,13 @@ function handleEvent(evt) {
     case 'provider_done': {
       const pNode = findNode(evt.data.provider);
       if (pNode) {
-        const stance = (evt.data.stance || 'PARTIAL').toLowerCase();
         pNode.status = 'voted';
-        pNode.vote = stance === 'agree' || stance === 'disagree' || stance === 'partial' ? stance : 'partial';
-        pNode.confidence = 0.6 + Math.random() * 0.35;
+        pNode.vote = normalizeStance(evt.data.stance);
+        // Average sub-model confidence rather than making up random numbers.
+        const subs = (pNode.children || []).filter(c => typeof c.confidence === 'number' && c.vote && c.vote !== 'error');
+        pNode.confidence = subs.length
+          ? subs.reduce((a, c) => a + c.confidence, 0) / subs.length
+          : 0.6;
         redraw();
       }
       break;
@@ -691,22 +735,31 @@ function handleEvent(evt) {
 
 function rollUpProviderVote(modelNode) {
   for (const child of treeData.children) {
-    if ((child.children || []).find(m => m.id === modelNode.id)) {
-      const votes = child.children.filter(m => m.vote).map(m => m.vote);
-      if (!votes.length) return;
-      const counts = { agree: 0, disagree: 0, partial: 0 };
-      votes.forEach(v => { if (counts[v] !== undefined) counts[v]++; });
-      child.vote = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-      child.confidence = Math.max(...votes.map(() => 0.5 + Math.random() * 0.5));
-    }
+    if (!(child.children || []).find(m => m.id === modelNode.id)) continue;
+
+    // Count only non-error sub-model votes toward the provider stance.
+    const valid = child.children.filter(m => m.vote && m.vote !== 'error');
+    if (!valid.length) return;
+
+    const counts = { agree: 0, disagree: 0, partial: 0 };
+    valid.forEach(m => { if (counts[m.vote] !== undefined) counts[m.vote]++; });
+    child.vote = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+
+    // Average real sub-model confidences instead of fabricating numbers.
+    const confs = valid.map(m => typeof m.confidence === 'number' ? m.confidence : 0.7);
+    child.confidence = confs.reduce((a, c) => a + c, 0) / confs.length;
   }
 }
 
 function showConsensus(data) {
-  // Update root
-  const stance = (data.consensus || 'PARTIAL').toLowerCase();
-  treeData.vote = stance === 'agree' || stance === 'disagree' || stance === 'partial' ? stance : 'partial';
-  treeData.confidence = (data.confidence || 50) / 100;
+  // Update root. NO_QUORUM means every model errored or refused to vote.
+  const raw = (data.consensus || 'PARTIAL').toLowerCase();
+  if (raw === 'no_quorum') {
+    treeData.vote = 'error';
+  } else {
+    treeData.vote = normalizeStance(raw);
+  }
+  treeData.confidence = (data.confidence || 0) / 100;
   treeData.status = 'voted';
   setPill('complete');
   redraw();
@@ -714,10 +767,16 @@ function showConsensus(data) {
   // Show overlay
   const overlay = document.getElementById('consensus-overlay');
   overlay.classList.add('visible');
-  const labels = { agree: 'Consensus: Agree', disagree: 'Consensus: Disagree', partial: 'Split Decision' };
+  const labels = {
+    agree: 'Consensus: Agree',
+    disagree: 'Consensus: Disagree',
+    partial: 'Split Decision',
+    error: 'No Quorum',
+  };
   document.getElementById('result-verdict').textContent = labels[treeData.vote] || 'Result';
   document.getElementById('result-verdict').style.color = VOTE_COLOR[treeData.vote];
-  document.getElementById('result-confidence').textContent = `${data.confidence}% weighted`;
+  document.getElementById('result-confidence').textContent =
+    treeData.vote === 'error' ? 'no valid votes' : `${data.confidence}% weighted`;
 
   const total = (data.totals?.AGREE || 0) + (data.totals?.DISAGREE || 0) + (data.totals?.PARTIAL || 0) || 1;
   document.getElementById('result-bar').innerHTML = `

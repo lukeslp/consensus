@@ -9,9 +9,9 @@ Ask a question. Watch language models independently research it, argue about it,
 
 ## What it does
 
-You type a question. 8+ language models from different providers each independently research it and form an opinion. They vote — AGREE, DISAGREE, or PARTIAL — and you see the whole debate play out in a live tree visualization.
+You type a question. 8+ language models from different providers each independently research it and form an opinion. They vote (AGREE, DISAGREE, or PARTIAL) and you see the whole debate play out in a live tree visualization.
 
-Not all votes are equal. Anthropic and Gemini carry more weight (they're royalty). OpenAI and xAI are lords. Mistral, Cohere, Groq, and Perplexity are knights. Each provider can run multiple sub-models, so you see the family tree branch out — Anthropic splits into Sonnet and Haiku, Gemini into Flash and Pro, and so on.
+Not all votes are equal. Anthropic and Gemini carry more weight (they're royalty). OpenAI and xAI are lords. Mistral, Cohere, Groq, and Perplexity are knights. Each provider can run multiple sub-models, so you see the family tree branch out: Anthropic splits into Sonnet and Haiku, Gemini into Flash and Pro, and so on.
 
 The tree lights up as each model starts thinking. Votes cascade from sub-models up to providers, then to the final consensus. Green for agree, red for disagree, amber for split.
 
@@ -39,7 +39,7 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set at least one API key — you don't need all of them, just the providers you want to include:
+Set at least one API key (you don't need all of them, just the providers you want to include):
 
 ```bash
 export ANTHROPIC_API_KEY=...
@@ -59,7 +59,7 @@ python app.py
 
 Press `Cmd+Enter` (or `Ctrl+Enter`) to start a debate.
 
-> **Note:** This project uses a shared LLM provider library (`llm_providers`) for unified auth, rate limiting, and streaming across providers. That library is bundled as part of the broader geepers ecosystem and is not yet published as a standalone package. If you're running into import errors, the library needs to be on your Python path — raise an issue and we can work out the best way to package it.
+> **Note:** This project uses a shared LLM provider library (`llm_providers`) for unified auth, rate limiting, and streaming across providers. That library is bundled as part of the broader geepers ecosystem and is not yet published as a standalone package. If you're running into import errors, the library needs to be on your Python path: open an issue and I can work out the best way to package it.
 
 ## Architecture
 
@@ -75,7 +75,7 @@ One Flask file, one HTML file. The backend fires all providers in parallel threa
 
 Each model gets the same system prompt: research the question, state your confidence, and cast a vote (AGREE / DISAGREE / PARTIAL) with a one-sentence summary. Sub-model votes roll up to a provider-level stance, then a weighted final consensus.
 
-The weight system means Anthropic and Gemini together can overrule all the knights — but if every knight disagrees, the split shows up clearly in the visualization.
+The weight system means Anthropic and Gemini together can overrule all the knights, but if every knight disagrees, the split shows up clearly in the visualization.
 
 ## License
 

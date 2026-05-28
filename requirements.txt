@@ -1,1 +1,10 @@
 flask>=3.0
+
+# Provider SDKs used by the shared llm_providers library (on PYTHONPATH, not
+# pip-installed here). Only the providers listed in app.py's PROVIDERS dict are
+# needed; each is loaded lazily, so a missing SDK just drops that provider.
+requests>=2.31.0            # xai (module-level import) + mistral
+anthropic>=0.83.0          # Anthropic / Claude
+openai>=2.0.0              # OpenAI, xAI, Groq, Perplexity (all OpenAI-compatible)
+cohere>=5.0.0              # Cohere
+google-generativeai>=0.3.0 # Gemini

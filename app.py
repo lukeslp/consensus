@@ -24,7 +24,31 @@ _LLM_PROVIDERS_PATH = os.environ.get('LLM_PROVIDERS_PATH', '/home/coolhand/share
 if _LLM_PROVIDERS_PATH and os.path.isdir(_LLM_PROVIDERS_PATH) and _LLM_PROVIDERS_PATH not in sys.path:
     sys.path.insert(0, _LLM_PROVIDERS_PATH)
 
-from llm_providers import ProviderFactory  # noqa: E402
+from llm_providers import ProviderFactory, Message  # noqa: E402
+
+# Reuse the shared RateLimiter, but load just that module by file path. Importing
+# `web.rate_limit` normally executes web/__init__.py, which eagerly pulls in
+# flask_cors, the vision service, and the proxy blueprints: heavy deps this
+# two-file service doesn't carry. The limiter itself needs only Flask.
+import importlib.util as _importlib_util  # noqa: E402
+
+
+def _load_shared_rate_limiter():
+    rl_path = os.path.join(_LLM_PROVIDERS_PATH, 'web', 'rate_limit.py')
+    spec = _importlib_util.spec_from_file_location('shared_web_rate_limit', rl_path)
+    if not (spec and spec.loader):
+        raise ImportError(f'cannot load RateLimiter from {rl_path}')
+    mod = _importlib_util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.RateLimiter
+
+
+try:
+    RateLimiter = _load_shared_rate_limiter()
+except Exception as _rl_err:  # pragma: no cover - degraded path
+    logging.getLogger('consensus').warning(
+        'shared RateLimiter unavailable (%s); /api/debate will run unthrottled', _rl_err)
+    RateLimiter = None
 
 logger = logging.getLogger('consensus')
 logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO'),
@@ -128,6 +152,20 @@ STREAM_HEARTBEAT = 15        # seconds between heartbeat comments
 MODEL_TIMEOUT = 90           # seconds per provider.chat call (informational)
 DEBATE_TIMEOUT = 180         # seconds total before we cut losses
 MAX_QUESTION_LEN = 4000
+
+# Each debate fans out to ~12 paid model calls, so the public endpoint needs a
+# ceiling. Without Redis the shared RateLimiter tracks a single global window
+# (the per-key path is Redis-only), so this is a global throttle, not per-IP.
+# Good enough as a cost guard; set Redis for per-client fairness.
+DEBATE_RATE_LIMIT = int(os.environ.get('DEBATE_RATE_LIMIT', 20))  # debates/min
+_rate_limiter = RateLimiter(requests_per_minute=DEBATE_RATE_LIMIT) if RateLimiter else None
+
+
+def _debate_rate_limit(func):
+    """Apply the shared rate limiter if available; otherwise a no-op passthrough."""
+    if _rate_limiter is None:
+        return func
+    return _rate_limiter.limit(key_func=lambda: request.remote_addr)(func)
 
 
 def _create_session(session_id: str, question: str) -> None:
@@ -265,11 +303,16 @@ def _extract_text(chunk) -> str:
 
 
 def _stream_or_complete(provider, messages, model_info, model_id, session_id) -> str:
-    """Prefer streaming; fall back to a blocking chat call if unsupported."""
+    """Prefer streaming; fall back to a blocking complete() if unsupported.
+
+    Providers expose the shared ``llm_providers`` interface: ``stream_complete``
+    yields plain text deltas and ``complete`` returns a ``CompletionResponse``
+    whose ``.content`` is the full text. Both take a list of ``Message`` objects.
+    """
     full = ''
     streamed_any = False
 
-    stream_fn = getattr(provider, 'stream_chat', None)
+    stream_fn = getattr(provider, 'stream_complete', None)
     if callable(stream_fn):
         try:
             for chunk in stream_fn(messages, model=model_info['id']):
@@ -285,11 +328,12 @@ def _stream_or_complete(provider, messages, model_info, model_id, session_id) ->
             if streamed_any:
                 logger.warning('stream failed mid-output for %s: %s', model_id, stream_err)
                 return full
-            logger.info('stream_chat unavailable for %s (%s), falling back', model_id, stream_err)
+            logger.info('stream_complete unavailable for %s (%s), falling back', model_id, stream_err)
 
     if not streamed_any:
-        result = provider.chat(messages, model=model_info['id'])
-        full = _extract_text(result) or (str(result) if result else '')
+        result = provider.complete(messages, model=model_info['id'])
+        full = result.content if hasattr(result, 'content') else _extract_text(result)
+        full = full or ''
         if full:
             emit_event(session_id, 'model_chunk', {'model': model_id, 'text': full})
 
@@ -304,8 +348,8 @@ def query_model(provider_key, model_info, question, session_id):
     try:
         provider = ProviderFactory.get_provider(provider_key)
         messages = [
-            {'role': 'system', 'content': DEBATE_SYSTEM},
-            {'role': 'user', 'content': question},
+            Message(role='system', content=DEBATE_SYSTEM),
+            Message(role='user', content=question),
         ]
         full_response = _stream_or_complete(provider, messages, model_info, model_id, session_id)
         vote = parse_vote(full_response)
@@ -471,6 +515,7 @@ def get_providers():
 
 
 @app.route('/api/debate', methods=['POST'])
+@_debate_rate_limit
 def start_debate():
     """Start a new debate. Returns a session_id for SSE streaming."""
     data = request.get_json(silent=True) or {}

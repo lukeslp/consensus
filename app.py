@@ -42,8 +42,9 @@ PROVIDERS = {
         'label': 'Anthropic',
         'color': '#C9A84C',
         'models': [
-            {'id': 'claude-sonnet-4-5-20250514', 'label': 'Sonnet 4.5'},
-            {'id': 'claude-haiku-4-5-20251001', 'label': 'Haiku 4.5'},
+            {'id': 'claude-opus-4-7', 'label': 'Opus 4.7'},
+            {'id': 'claude-sonnet-4-6', 'label': 'Sonnet 4.6'},
+            {'id': 'claude-haiku-4-5', 'label': 'Haiku 4.5'},
         ]
     },
     'gemini': {
